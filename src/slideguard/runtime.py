@@ -8,6 +8,7 @@ from jinja2 import Environment
 from lxml import etree
 from openpyxl import Workbook
 from pptx import Presentation
+import websockets
 
 from slideguard.preview.text_layout import (
     MICROSOFT_YAHEI_BOLD,
@@ -42,3 +43,5 @@ def validate_runtime() -> None:
     Workbook()
     Environment(autoescape=True).from_string("{{ value }}").render(value="ok")
     tkinter.Tcl().eval("info patchlevel")
+    if not websockets.__version__:
+        raise RuntimeError("WebSocket运行依赖不可用")

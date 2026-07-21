@@ -12,6 +12,7 @@ dependencies = [
   "pillow>=11,<12",
   "python-pptx>=1.0,<2",
   "uvicorn>=0.35,<1",
+  "websockets>=15,<16",
 ]
 
 [dependency-groups]
