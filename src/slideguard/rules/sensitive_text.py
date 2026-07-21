@@ -11,6 +11,7 @@ class SensitiveTextMatch:
     term: str
     part_uri: str
     source: str
+    slide_indices: tuple[int, ...]
     xml_path: str
     start: int
     end: int
@@ -30,6 +31,7 @@ def find_sensitive_text(
                         term=term,
                         part_uri=occurrence.part_uri,
                         source=occurrence.source,
+                        slide_indices=occurrence.slide_indices,
                         xml_path=occurrence.xml_path,
                         start=start,
                         end=start + len(term),
@@ -37,4 +39,3 @@ def find_sensitive_text(
                 )
                 start = occurrence.text.find(term, start + 1)
     return tuple(matches)
-

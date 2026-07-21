@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import secrets
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -27,6 +29,7 @@ def create_app(
     lexicon_store: LexiconStore | None = None,
     expected_host: str = "testserver",
     allowed_origin: str | None = None,
+    frontend_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="SlideGuard local service",
@@ -61,6 +64,19 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    if frontend_dir is not None:
+
+        @app.get("/", include_in_schema=False)
+        def index() -> FileResponse:
+            return FileResponse(frontend_dir / "index.html", media_type="text/html")
+
+        @app.get("/assets/app.js", include_in_schema=False)
+        def frontend_script() -> FileResponse:
+            return FileResponse(
+                frontend_dir / "app.js",
+                media_type="text/javascript",
+            )
 
     if lexicon_store is not None:
 
@@ -116,4 +132,3 @@ def _error(http_status: int, code: str, message: str) -> JSONResponse:
             "X-Content-Type-Options": "nosniff",
         },
     )
-
