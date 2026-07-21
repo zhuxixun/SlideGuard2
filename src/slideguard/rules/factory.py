@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 
-from slideguard.rules.models import Issue, IssueStatus, Severity
+from slideguard.rules.models import FixProposal, Issue, IssueStatus, Severity
 
 
 def issue(
@@ -17,6 +17,8 @@ def issue(
     evidence: str,
     suggestion: str,
     can_auto_fix: bool = False,
+    fix_kind: str | None = None,
+    fix_target: str | None = None,
 ) -> Issue:
     return Issue(
         issue_id=sha256(fact_key.encode("utf-8")).hexdigest()[:20],
@@ -32,5 +34,9 @@ def issue(
         evidence=evidence,
         suggestion=suggestion,
         can_auto_fix=can_auto_fix,
-        fix_proposal=None,
+        fix_proposal=(
+            FixProposal(fix_kind, fix_target)
+            if can_auto_fix and fix_kind is not None and fix_target is not None
+            else None
+        ),
     )
