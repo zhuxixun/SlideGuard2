@@ -6,7 +6,8 @@ from pathlib import Path
 from PIL import ImageFont
 
 
-DEFAULT_DPI = 96
+# 288 DPI使0.25pt映射为整数像素，避免96 DPI下14pt等常用字号被取整。
+DEFAULT_DPI = 288
 MICROSOFT_YAHEI_REGULAR = Path("C:/Windows/Fonts/msyh.ttc")
 MICROSOFT_YAHEI_BOLD = Path("C:/Windows/Fonts/msyhbd.ttc")
 
@@ -53,4 +54,3 @@ def measure_single_line(
         font_size_pt=font_size_pt,
         dpi=dpi,
     )
-
