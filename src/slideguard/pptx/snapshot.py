@@ -76,6 +76,14 @@ class ThemeFonts:
 class TextFrameSnapshot:
     text: str
     paragraphs: tuple[tuple[TextRunSnapshot, ...], ...]
+    margin_left_pt: float
+    margin_right_pt: float
+    margin_top_pt: float
+    margin_bottom_pt: float
+    word_wrap: bool | None
+    auto_size: str | None
+    auto_fit_scale: float
+    vertical: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,7 +240,19 @@ def _text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot:  # type: i
         paragraph_snapshots.append(tuple(runs))
         if paragraph_index < len(shape.text_frame.paragraphs) - 1:
             offset += 1
-    return TextFrameSnapshot(text=shape.text, paragraphs=tuple(paragraph_snapshots))
+    frame = shape.text_frame
+    return TextFrameSnapshot(
+        text=shape.text,
+        paragraphs=tuple(paragraph_snapshots),
+        margin_left_pt=(frame.margin_left or 0) / EMU_PER_POINT,
+        margin_right_pt=(frame.margin_right or 0) / EMU_PER_POINT,
+        margin_top_pt=(frame.margin_top or 0) / EMU_PER_POINT,
+        margin_bottom_pt=(frame.margin_bottom or 0) / EMU_PER_POINT,
+        word_wrap=frame.word_wrap,
+        auto_size=str(frame.auto_size) if frame.auto_size is not None else None,
+        auto_fit_scale=_auto_fit_scale(shape.element),
+        vertical=_is_vertical_text(shape.element),
+    )
 
 
 def _shape_text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot | None:  # type: ignore[no-untyped-def]
@@ -267,7 +287,18 @@ def _shape_text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot | Non
                 if paragraph_index < len(cell.text_frame.paragraphs) - 1:
                     offset += 1
             offset += 1
-    return TextFrameSnapshot(text="\n".join(texts), paragraphs=tuple(paragraphs))
+    return TextFrameSnapshot(
+        text="\n".join(texts),
+        paragraphs=tuple(paragraphs),
+        margin_left_pt=0,
+        margin_right_pt=0,
+        margin_top_pt=0,
+        margin_bottom_pt=0,
+        word_wrap=True,
+        auto_size=None,
+        auto_fit_scale=1,
+        vertical=False,
+    )
 
 
 def _effective_fonts(shape, declared: str | None, theme: ThemeFonts) -> tuple[str | None, str | None]:  # type: ignore[no-untyped-def]
@@ -356,6 +387,21 @@ def _text_occurrences(item) -> tuple[TextOccurrence, ...]:  # type: ignore[no-un
 def _shape_hidden(shape) -> bool:  # type: ignore[no-untyped-def]
     values = shape.element.xpath(".//*[local-name()='cNvPr']/@hidden")
     return bool(values and values[0] in {"1", "true"})
+
+
+def _auto_fit_scale(element) -> float:  # type: ignore[no-untyped-def]
+    values = element.xpath(".//*[local-name()='normAutofit']/@fontScale")
+    if not values:
+        return 1.0
+    try:
+        return max(0.0, min(1.0, int(values[0]) / 100_000))
+    except ValueError:
+        return 1.0
+
+
+def _is_vertical_text(element) -> bool:  # type: ignore[no-untyped-def]
+    values = element.xpath(".//*[local-name()='bodyPr']/@vert")
+    return bool(values and values[0] not in {"horz", ""})
 
 
 def _has_visual_style(shape) -> bool:  # type: ignore[no-untyped-def]
