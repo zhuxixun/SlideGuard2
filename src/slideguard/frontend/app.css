@@ -16,6 +16,10 @@ header, .between { justify-content: space-between; }
 .muted { color: #666; }
 .warning { padding: 0.75rem; color: #8a5100; background: #fff3cd; border-radius: 6px; }
 .error { padding: 0.75rem; color: #8b0000; background: #fde8e8; border-radius: 6px; }
+.drop-zone { margin-top: 1rem; padding: 1.25rem; border: 2px dashed #aaa; border-radius: 8px; text-align: center; color: #555; transition: border-color 0.15s, background 0.15s; }
+.drop-zone small { display: block; margin-top: 0.35rem; color: #777; }
+.drop-zone.dragging { border-color: #c00000; background: #fff1f1; color: #8b0000; }
+.file-path { overflow-wrap: anywhere; }
 .grow { flex: 1; }
 label { display: grid; gap: 0.35rem; margin-top: 1rem; }
 input, textarea { box-sizing: border-box; width: 100%; padding: 0.55rem; border: 1px solid #bbb; border-radius: 5px; }

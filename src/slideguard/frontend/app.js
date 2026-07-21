@@ -8,6 +8,9 @@ const nodes = {
   openPptx: document.querySelector("#open-pptx"),
   fileSummary: document.querySelector("#file-summary"),
   fileError: document.querySelector("#file-error"),
+  fileDetails: document.querySelector("#file-details"),
+  filePath: document.querySelector("#file-path"),
+  dropZone: document.querySelector("#pptx-drop-zone"),
   startScan: document.querySelector("#start-scan"),
   cancelScan: document.querySelector("#cancel-scan"),
   scanProgress: document.querySelector("#scan-progress"),
@@ -200,18 +203,63 @@ nodes.openPptx.addEventListener("click", async () => {
       nodes.fileSummary.textContent = "尚未打开文件";
       return;
     }
-    const sizeMb = (data.file.size_bytes / 1024 / 1024).toFixed(2);
-    currentFile = data.file;
-    resetScanResult();
-    nodes.fileSummary.textContent = `${data.file.name} · ${sizeMb} MB · ${data.file.slide_count} 页`;
-    nodes.startScan.disabled = false;
-    nodes.scanProgress.textContent = "请选择检查模式";
+    displayImportedFile(data.file);
   } catch (error) {
     nodes.fileSummary.textContent = "尚未打开文件";
     nodes.fileError.textContent = error.message;
     nodes.fileError.hidden = false;
   } finally {
     nodes.openPptx.disabled = false;
+  }
+});
+
+function displayImportedFile(file) {
+  const sizeMb = (file.size_bytes / 1024 / 1024).toFixed(2);
+  currentFile = file;
+  resetScanResult();
+  nodes.fileSummary.textContent = `${file.name} · ${sizeMb} MB · ${file.slide_count} 页`;
+  nodes.filePath.textContent = file.path;
+  nodes.fileDetails.hidden = false;
+  nodes.scanProgress.textContent = "请选择检查模式";
+  updateScanAvailability();
+}
+
+["dragenter", "dragover"].forEach((eventName) => {
+  nodes.dropZone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    if (!scanRunning) nodes.dropZone.classList.add("dragging");
+  });
+});
+["dragleave", "drop"].forEach((eventName) => {
+  nodes.dropZone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    nodes.dropZone.classList.remove("dragging");
+  });
+});
+nodes.dropZone.addEventListener("drop", async (event) => {
+  if (scanRunning) return;
+  const files = [...event.dataTransfer.files];
+  if (files.length !== 1 || !files[0].name.toLowerCase().endsWith(".pptx")) {
+    nodes.fileError.textContent = "请一次拖入一个 .pptx 文件。";
+    nodes.fileError.hidden = false;
+    return;
+  }
+  const file = files[0];
+  nodes.fileError.hidden = true;
+  nodes.fileSummary.textContent = "正在读取拖入的本机文件…";
+  try {
+    const response = await apiFetch("/api/files/drop", {
+      method: "POST",
+      headers: { "X-SlideGuard-Filename": encodeURIComponent(file.name) },
+      body: file,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail?.message || "文件读取失败");
+    displayImportedFile(data.file);
+  } catch (error) {
+    nodes.fileSummary.textContent = currentFile ? `${currentFile.name} · 已保留当前文件` : "尚未打开文件";
+    nodes.fileError.textContent = error.message;
+    nodes.fileError.hidden = false;
   }
 });
 

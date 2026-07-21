@@ -28,6 +28,7 @@ def run() -> None:
     data_root = application_root() / "data"
     lifecycle = LifecycleController(idle_seconds=15)
     native_dialog = NativeDialogService()
+    session_store = SessionStore()
     app = create_app(
         token=token,
         lexicon_store=LexiconStore(data_root / "config" / "sensitive-terms.txt"),
@@ -36,7 +37,8 @@ def run() -> None:
         frontend_dir=frontend_root(),
         lifecycle=lifecycle,
         native_dialog=native_dialog,
-        session_store=SessionStore(),
+        session_store=session_store,
+        import_dir=data_root / "sessions",
         scan_manager=ScanManager(),
         repair_manager=RepairManager(),
     )

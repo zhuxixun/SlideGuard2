@@ -33,6 +33,7 @@ from slideguard.reporting.exporters import default_report_name, export_html, exp
 from slideguard.repair.manager import RepairManager
 from slideguard.repair.planner import FixPlanError
 from datetime import datetime
+from slideguard.pptx.probe import MAX_PPTX_BYTES
 
 
 class LexiconResponse(BaseModel):
@@ -76,6 +77,7 @@ def create_app(
     session_store: SessionStore | None = None,
     scan_manager: ScanManager | None = None,
     repair_manager: RepairManager | None = None,
+    import_dir: Path | None = None,
 ) -> FastAPI:
     session_store = session_store or SessionStore()
     @asynccontextmanager
@@ -83,6 +85,7 @@ def create_app(
         try:
             yield
         finally:
+            session_store.clear()
             if native_dialog is not None:
                 native_dialog.close()
 
@@ -252,6 +255,74 @@ def create_app(
                     "size_bytes": imported.size_bytes,
                     "slide_count": imported.slide_count,
                 },
+            }
+
+    if native_dialog is not None:
+
+        @app.post("/api/files/drop")
+        async def import_dropped_pptx(request: Request) -> dict[str, object]:
+            if import_dir is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            if scan_manager is not None and scan_manager.snapshot().state.value == "running":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "scan_running", "message": "扫描正在执行，请先取消或等待完成"},
+                )
+            encoded_name = request.headers.get("x-slideguard-filename", "")
+            try:
+                from urllib.parse import unquote
+
+                file_name = Path(unquote(encoded_name)).name
+            except (ValueError, UnicodeError):
+                file_name = ""
+            if not file_name or Path(file_name).suffix.lower() != ".pptx":
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail={"code": "unsupported_format", "message": "仅支持拖入单个 .pptx 文件"},
+                )
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > MAX_PPTX_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail={"code": "file_too_large", "message": "PPTX 文件大小不能超过 200MB"},
+                )
+            session_dir = import_dir / secrets.token_hex(12)
+            destination = session_dir / file_name
+            session_dir.mkdir(parents=True, exist_ok=False)
+            size = 0
+            try:
+                with destination.open("wb") as output:
+                    async for chunk in request.stream():
+                        size += len(chunk)
+                        if size > MAX_PPTX_BYTES:
+                            raise PptxImportError("file_too_large", "PPTX 文件大小不能超过 200MB")
+                        output.write(chunk)
+                imported = await asyncio.to_thread(inspect_pptx, destination)
+            except (PptxImportError, OSError) as exc:
+                destination.unlink(missing_ok=True)
+                try:
+                    session_dir.rmdir()
+                except OSError:
+                    pass
+                if isinstance(exc, PptxImportError):
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail={"code": exc.code, "message": str(exc)},
+                    ) from exc
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={"code": "file_unavailable", "message": "无法保存拖入的本机文件"},
+                ) from exc
+            session_store.replace(imported, managed_copy=True)
+            if scan_manager is not None:
+                scan_manager.reset()
+            return {
+                "file": {
+                    "name": imported.file_name,
+                    "path": str(imported.path),
+                    "size_bytes": imported.size_bytes,
+                    "slide_count": imported.slide_count,
+                }
             }
 
         if scan_manager is not None:

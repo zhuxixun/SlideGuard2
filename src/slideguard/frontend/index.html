@@ -29,6 +29,11 @@
           </div>
           <button id="open-pptx" type="button" disabled>打开 PPT 文件</button>
         </div>
+        <div id="pptx-drop-zone" class="drop-zone" tabindex="0">
+          将 .pptx 文件拖到此处
+          <small>文件仅传递给本机 SlideGuard 服务进行处理</small>
+        </div>
+        <details id="file-details" hidden><summary>文件详情</summary><p id="file-path" class="file-path"></p></details>
         <p id="file-error" class="error" role="alert" hidden></p>
       </section>
 

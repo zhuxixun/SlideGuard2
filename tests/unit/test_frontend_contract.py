@@ -15,7 +15,13 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "expected_digest" in javascript
     assert "window.confirm" in javascript
     assert "打开 PPT 文件" in html
+    assert "将 .pptx 文件拖到此处" in html
+    assert "pptx-drop-zone" in html
+    assert "文件详情" in html
+    assert "file-path" in html
     assert "/api/dialog/open-pptx" in javascript
+    assert "/api/files/drop" in javascript
+    assert 'addEventListener("drop"' in javascript
     assert 'type="file"' not in html
     assert "FormData" not in javascript
     assert "快速检查" in html

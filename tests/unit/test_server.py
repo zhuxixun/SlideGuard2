@@ -264,7 +264,43 @@ def test_opening_another_file_clears_stale_scan_result(tmp_path: Path) -> None:
         response = client.post("/api/dialog/open-pptx", headers=TOKEN_HEADERS)
         assert response.status_code == 200
         assert client.get("/api/scans/current", headers=TOKEN_HEADERS).json()["state"] == "idle"
-    assert sessions.current().presentation.path == second.resolve()
+        assert sessions.current().presentation.path == second.resolve()
+    assert sessions.current() is None
+
+
+def test_dropped_file_is_imported_locally_and_cleaned_with_session(tmp_path: Path) -> None:
+    source = tmp_path / "拖入 样例.pptx"
+    document = Presentation()
+    document.slides.add_slide(document.slide_layouts[6])
+    document.save(source)
+
+    class DialogStub:
+        def close(self) -> None:
+            return None
+
+    sessions = SessionStore()
+    managed_path = None
+    with TestClient(
+        create_app(
+            token="secret",
+            session_store=sessions,
+            scan_manager=ScanManager(),
+            native_dialog=DialogStub(),  # type: ignore[arg-type]
+            import_dir=tmp_path / "sessions",
+        )
+    ) as client:
+        response = client.post(
+            "/api/files/drop",
+            headers={**TOKEN_HEADERS, "X-SlideGuard-Filename": "%E6%8B%96%E5%85%A5%20%E6%A0%B7%E4%BE%8B.pptx"},
+            content=source.read_bytes(),
+        )
+        assert response.status_code == 200
+        assert response.json()["file"]["name"] == "拖入 样例.pptx"
+        managed_path = Path(response.json()["file"]["path"])
+        assert managed_path.is_file()
+        assert sessions.current().managed_copy is True
+    assert managed_path is not None
+    assert not managed_path.exists()
 
 
 def test_scan_continues_when_sensitive_lexicon_is_invalid(tmp_path: Path) -> None:

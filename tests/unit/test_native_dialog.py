@@ -77,12 +77,13 @@ def test_dialog_api_imports_selected_file_and_cancel(tmp_path: Path) -> None:
     ) as client:
         selected = client.post("/api/dialog/open-pptx", headers=headers)
         cancelled = client.post("/api/dialog/open-pptx", headers=headers)
+        assert sessions.current().presentation.path == sample.resolve()
 
     assert selected.json()["cancelled"] is False
     assert selected.json()["file"]["name"] == "one.pptx"
     assert selected.json()["file"]["slide_count"] == 1
     assert cancelled.json() == {"cancelled": True, "file": None}
-    assert sessions.current().presentation.path == sample.resolve()
+    assert sessions.current() is None
     assert backend.closed is True
 
 
