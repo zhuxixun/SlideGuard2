@@ -12,7 +12,7 @@
 | SVG预览与高亮 | 基础探针通过 | 坐标、分层与转义测试；待真实复杂页面 |
 | Open XML最小修复 | 基础探针通过 | 真实PPTX重开及非目标部件内容不变测试 |
 | 微软雅黑文本测量 | WPS预验证中 | 已建立288 DPI Pillow基线和WPS COM测量；待PowerPoint人工终验 |
-| PyInstaller onedir | 未验证 | 待构建与干净系统冒烟 |
+| PyInstaller onedir | 本机通过 | 48.23MB、82个文件、完整依赖EXE自检退出码0；待干净Win10/11冒烟 |
 | 50页性能与2GB内存 | 未验证 | 待基准样例 |
 
 ## WPS文字测量预验证结果
@@ -23,6 +23,16 @@
 - 最大绝对误差：0.9pt；
 - 8个样本均不超过2pt；
 - 此结果只证明WPS预验证通过，仍需在PowerPoint验收机上完成最终95分位误差统计。
+
+## PyInstaller本机预验证结果
+
+- PyInstaller 6.21.0、Python 3.13.14，`onedir`窗口模式构建成功；
+- 发布目录共82个文件、48.23MB；
+- `SlideGuard.exe --self-test`确认前端资源、空敏感词库、微软雅黑字体、python-pptx、lxml、openpyxl和Jinja2均可用，退出码为0；
+- 完整依赖包连续3次自检耗时为7166ms、3042ms、3115ms，中位数3115ms；
+- 自检耗时不等同于“启动至首页可操作”，仍需实际浏览器启动计时；
+- 构建日志仅提示可选`tzdata`未找到，当前Windows本地时区和离线功能不依赖该包；
+- 尚需在干净Windows 10 22H2和Windows 11环境验证无需Python及额外运行库。
 
 ## PowerPoint文字测量对照
 

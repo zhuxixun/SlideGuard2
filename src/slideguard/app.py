@@ -11,6 +11,7 @@ import webbrowser
 import uvicorn
 
 from slideguard.lexicon import LexiconStore
+from slideguard.runtime import application_root, frontend_root
 from slideguard.server.app import create_app
 from slideguard.server.lifecycle import LifecycleController
 
@@ -20,14 +21,14 @@ def run() -> None:
     listener = _loopback_listener()
     port = listener.getsockname()[1]
     origin = f"http://127.0.0.1:{port}"
-    data_root = Path.cwd() / "data"
+    data_root = application_root() / "data"
     lifecycle = LifecycleController(idle_seconds=15)
     app = create_app(
         token=token,
         lexicon_store=LexiconStore(data_root / "config" / "sensitive-terms.txt"),
         expected_host=f"127.0.0.1:{port}",
         allowed_origin=origin,
-        frontend_dir=Path(__file__).parent / "frontend",
+        frontend_dir=frontend_root(),
         lifecycle=lifecycle,
     )
     config = uvicorn.Config(
