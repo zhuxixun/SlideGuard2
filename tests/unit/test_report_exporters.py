@@ -46,6 +46,8 @@ def test_html_report_is_single_file_escaped_and_marks_incomplete(tmp_path: Path)
     export_html(result, destination)
     content = destination.read_text(encoding="utf-8")
     assert "扫描未完成" in content
+    assert "请求执行规则" in content
+    assert "R003：failed" in content
     assert "客户 &amp; 项目.pptx" in content
     assert "&lt;script&gt;" in content
     assert "=SUM(A1:A2)&lt;script&gt;" in content
@@ -66,6 +68,15 @@ def test_xlsx_report_has_summary_details_and_formula_protection(tmp_path: Path) 
     details = workbook["问题清单"]
     assert details.cell(2, 7).value == "'=SUM(A1:A2)<script>"
     assert workbook["扫描摘要"].cell(2, 2).value == "客户 & 项目.pptx"
+    summary = {
+        row[0].value: row[1].value
+        for row in workbook["扫描摘要"].iter_rows(min_row=2)
+    }
+    assert summary["请求执行规则"] == "R002"
+    assert summary["涉及问题页面数"] == 1
+    assert summary["可自动修复问题数"] == 0
+    assert summary["R002 问题数"] == 1
+    assert details.cell(2, 13).value == "否"
 
 
 def test_report_export_never_overwrites_existing_file(tmp_path: Path) -> None:

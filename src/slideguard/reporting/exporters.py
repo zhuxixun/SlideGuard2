@@ -27,15 +27,16 @@ def export_html(result: ScanResult, destination: Path, *, software_version: str 
         for rule_id in sorted(rules)
     )
     incomplete = "<div class='incomplete'>扫描未完成</div>" if not result.complete else ""
+    execution = _html_execution_summary(result)
     comparison = _html_repair_comparison(result)
     document = f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>SlideGuard 质检报告</title>
 <style>body{{font-family:'Microsoft YaHei',sans-serif;margin:32px;color:#222}}h1{{color:#c00000}}.incomplete{{padding:16px;background:#ffd9d9;color:#8b0000;font-weight:bold}}.filters{{display:flex;gap:8px;margin:18px 0}}.filters input,.filters select{{padding:7px;border:1px solid #aaa}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top}}th{{background:#f2f2f2}}.S1{{color:#a00000;font-weight:bold}}.preview{{width:240px;max-height:140px}}</style></head>
 <body><h1>SlideGuard 质检报告</h1>{incomplete}
 <dl><dt>文件名</dt><dd>{escape(result.snapshot.file_identity.path.name)}</dd><dt>路径</dt><dd>{escape(str(result.snapshot.file_identity.path))}</dd><dt>大小</dt><dd>{result.snapshot.file_identity.size_bytes} bytes</dd><dt>页数</dt><dd>{len(result.snapshot.slides)}</dd><dt>扫描模式</dt><dd>{escape(result.mode.value)}</dd><dt>完整性</dt><dd>{'完整' if result.complete else '未完成'}</dd><dt>规则集</dt><dd>{escape(result.rule_set_version)}</dd><dt>软件版本</dt><dd>{escape(software_version)}</dd><dt>开始时间</dt><dd>{result.started_at.isoformat()}</dd><dt>结束时间</dt><dd>{result.finished_at.isoformat()}</dd></dl>
-<p>S1 {severity['S1']} / S2 {severity['S2']} / S3 {severity['S3']} / S4 {severity['S4']}；涉及页面 {affected_pages}；可自动修复 {fixable}</p>{comparison}<ul>{rule_summary}</ul>
+{execution}<p>S1 {severity['S1']} / S2 {severity['S2']} / S3 {severity['S3']} / S4 {severity['S4']}；涉及页面 {affected_pages}；可自动修复 {fixable}</p>{comparison}<ul>{rule_summary}</ul>
 <div class="filters"><input id="report-search" type="search" placeholder="搜索问题明细"><select id="report-severity"><option value="">全部级别</option><option>S1</option><option>S2</option><option>S3</option><option>S4</option></select><select id="report-rule"><option value="">全部规则</option>{rule_options}</select><span id="visible-count"></span></div>
-<table><thead><tr><th>级别</th><th>规则</th><th>页码</th><th>实际值</th><th>标准值</th><th>依据</th><th>建议</th><th>预览</th></tr></thead><tbody>{rows}</tbody></table>{_REPORT_SCRIPT}</body></html>"""
+<table><thead><tr><th>级别</th><th>规则</th><th>页码</th><th>状态</th><th>修复后新增</th><th>实际值</th><th>标准值</th><th>依据</th><th>建议</th><th>预览</th></tr></thead><tbody>{rows}</tbody></table>{_REPORT_SCRIPT}</body></html>"""
     _atomic_text(destination, document)
 
 
@@ -47,6 +48,9 @@ def export_xlsx(result: ScanResult, destination: Path, *, software_version: str 
     summary.append(("项目", "值"))
     summary["A1"].font = summary["B1"].font = Font(bold=True)
     severity = Counter(found.severity.value for found in result.issues)
+    rules = Counter(found.rule_id for found in result.issues)
+    affected_pages = len({found.slide_index for found in result.issues if found.slide_index > 0})
+    fixable = sum(found.can_auto_fix for found in result.issues)
     values = (
         ("文件名", result.snapshot.file_identity.path.name),
         ("路径", str(result.snapshot.file_identity.path)),
@@ -58,13 +62,19 @@ def export_xlsx(result: ScanResult, destination: Path, *, software_version: str 
         ("软件版本", software_version),
         ("开始时间", result.started_at.isoformat()),
         ("结束时间", result.finished_at.isoformat()),
+        ("请求执行规则", "、".join(result.requested_rules)),
+        ("已完成规则", "、".join(result.completed_rules)),
+        ("失败规则", "；".join(f"{item.rule_id}: {item.message}" for item in result.failures) or "无"),
+        ("涉及问题页面数", affected_pages),
+        ("可自动修复问题数", fixable),
         *( (level, severity[level]) for level in ("S1", "S2", "S3", "S4") ),
+        *( (f"{rule_id} 问题数", count) for rule_id, count in sorted(rules.items()) ),
         *_xlsx_repair_comparison(result),
     )
     for row in values:
         summary.append(row)
     details = workbook.create_sheet("问题清单")
-    headers = ("问题ID", "级别", "规则", "页码", "状态", "可自动修复", "实际值", "标准值", "标准来源", "判断依据", "修改建议", "对象ID")
+    headers = ("问题ID", "级别", "规则", "页码", "状态", "可自动修复", "实际值", "标准值", "标准来源", "判断依据", "修改建议", "对象ID", "修复后新增")
     details.append(headers)
     for cell in details[1]:
         cell.font = Font(bold=True)
@@ -73,7 +83,7 @@ def export_xlsx(result: ScanResult, destination: Path, *, software_version: str 
             found.issue_id, found.severity.value, found.rule_id, found.slide_index,
             found.status.value, "是" if found.can_auto_fix else "否", found.actual_value,
             found.expected_value, found.standard_source, found.evidence, found.suggestion,
-            ", ".join(found.object_keys),
+            ", ".join(found.object_keys), "是" if found.introduced_by_repair else "否",
         )))
     for sheet in (summary, details):
         sheet.freeze_panes = "A2"
@@ -105,6 +115,21 @@ def _html_repair_comparison(result: ScanResult) -> str:
     )
 
 
+def _html_execution_summary(result: ScanResult) -> str:
+    requested = escape("、".join(result.requested_rules))
+    completed = escape("、".join(result.completed_rules))
+    failures = "".join(
+        f"<li>{escape(item.rule_id)}：{escape(item.message)}</li>"
+        for item in result.failures
+    )
+    failure_block = f"<ul>{failures}</ul>" if failures else "<span>无</span>"
+    return (
+        f"<p><strong>请求执行规则：</strong>{requested}</p>"
+        f"<p><strong>已完成规则：</strong>{completed}</p>"
+        f"<div><strong>失败规则：</strong>{failure_block}</div>"
+    )
+
+
 def _xlsx_repair_comparison(result: ScanResult) -> tuple[tuple[str, int], ...]:
     comparison = result.repair_comparison
     if comparison is None:
@@ -124,7 +149,8 @@ def _html_issue_row(result: ScanResult, found) -> str:  # type: ignore[no-untype
     )
     return f"<tr{attributes}>" + "".join(
         f"<td>{escape(str(value))}</td>" for value in (
-            found.severity.value, found.rule_id, found.slide_index, found.actual_value,
+            found.severity.value, found.rule_id, found.slide_index, found.status.value,
+            "是" if found.introduced_by_repair else "否", found.actual_value,
             found.expected_value, found.evidence, found.suggestion,
         )
     ) + f"<td>{_slide_svg(result, found)}</td></tr>"
