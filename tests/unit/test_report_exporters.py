@@ -48,7 +48,11 @@ def test_html_report_is_single_file_escaped_and_marks_incomplete(tmp_path: Path)
     assert "扫描未完成" in content
     assert "客户 &amp; 项目.pptx" in content
     assert "&lt;script&gt;" in content
-    assert "<script>" not in content
+    assert "=SUM(A1:A2)&lt;script&gt;" in content
+    assert "report-search" in content
+    assert "report-severity" in content
+    assert "report-rule" in content
+    assert "addEventListener('input', apply)" in content
     assert "data-page-highlight" in content
     assert 'src="http' not in content
     assert 'href="http' not in content

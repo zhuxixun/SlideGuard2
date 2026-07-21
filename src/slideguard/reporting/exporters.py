@@ -22,15 +22,20 @@ def export_html(result: ScanResult, destination: Path, *, software_version: str 
     rule_summary = "".join(
         f"<li>{escape(rule_id)}：{count}</li>" for rule_id, count in sorted(rules.items())
     )
+    rule_options = "".join(
+        f"<option value='{escape(rule_id, quote=True)}'>{escape(rule_id)}</option>"
+        for rule_id in sorted(rules)
+    )
     incomplete = "<div class='incomplete'>扫描未完成</div>" if not result.complete else ""
     comparison = _html_repair_comparison(result)
     document = f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>SlideGuard 质检报告</title>
-<style>body{{font-family:'Microsoft YaHei',sans-serif;margin:32px;color:#222}}h1{{color:#c00000}}.incomplete{{padding:16px;background:#ffd9d9;color:#8b0000;font-weight:bold}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top}}th{{background:#f2f2f2}}.S1{{color:#a00000;font-weight:bold}}.preview{{width:240px;max-height:140px}}</style></head>
+<style>body{{font-family:'Microsoft YaHei',sans-serif;margin:32px;color:#222}}h1{{color:#c00000}}.incomplete{{padding:16px;background:#ffd9d9;color:#8b0000;font-weight:bold}}.filters{{display:flex;gap:8px;margin:18px 0}}.filters input,.filters select{{padding:7px;border:1px solid #aaa}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top}}th{{background:#f2f2f2}}.S1{{color:#a00000;font-weight:bold}}.preview{{width:240px;max-height:140px}}</style></head>
 <body><h1>SlideGuard 质检报告</h1>{incomplete}
 <dl><dt>文件名</dt><dd>{escape(result.snapshot.file_identity.path.name)}</dd><dt>路径</dt><dd>{escape(str(result.snapshot.file_identity.path))}</dd><dt>大小</dt><dd>{result.snapshot.file_identity.size_bytes} bytes</dd><dt>页数</dt><dd>{len(result.snapshot.slides)}</dd><dt>扫描模式</dt><dd>{escape(result.mode.value)}</dd><dt>完整性</dt><dd>{'完整' if result.complete else '未完成'}</dd><dt>规则集</dt><dd>{escape(result.rule_set_version)}</dd><dt>软件版本</dt><dd>{escape(software_version)}</dd><dt>开始时间</dt><dd>{result.started_at.isoformat()}</dd><dt>结束时间</dt><dd>{result.finished_at.isoformat()}</dd></dl>
 <p>S1 {severity['S1']} / S2 {severity['S2']} / S3 {severity['S3']} / S4 {severity['S4']}；涉及页面 {affected_pages}；可自动修复 {fixable}</p>{comparison}<ul>{rule_summary}</ul>
-<table><thead><tr><th>级别</th><th>规则</th><th>页码</th><th>实际值</th><th>标准值</th><th>依据</th><th>建议</th><th>预览</th></tr></thead><tbody>{rows}</tbody></table></body></html>"""
+<div class="filters"><input id="report-search" type="search" placeholder="搜索问题明细"><select id="report-severity"><option value="">全部级别</option><option>S1</option><option>S2</option><option>S3</option><option>S4</option></select><select id="report-rule"><option value="">全部规则</option>{rule_options}</select><span id="visible-count"></span></div>
+<table><thead><tr><th>级别</th><th>规则</th><th>页码</th><th>实际值</th><th>标准值</th><th>依据</th><th>建议</th><th>预览</th></tr></thead><tbody>{rows}</tbody></table>{_REPORT_SCRIPT}</body></html>"""
     _atomic_text(destination, document)
 
 
@@ -113,12 +118,41 @@ def _xlsx_repair_comparison(result: ScanResult) -> tuple[tuple[str, int], ...]:
 
 
 def _html_issue_row(result: ScanResult, found) -> str:  # type: ignore[no-untyped-def]
-    return "<tr>" + "".join(
+    attributes = (
+        f" data-severity='{escape(found.severity.value, quote=True)}'"
+        f" data-rule='{escape(found.rule_id, quote=True)}'"
+    )
+    return f"<tr{attributes}>" + "".join(
         f"<td>{escape(str(value))}</td>" for value in (
             found.severity.value, found.rule_id, found.slide_index, found.actual_value,
             found.expected_value, found.evidence, found.suggestion,
         )
     ) + f"<td>{_slide_svg(result, found)}</td></tr>"
+
+
+_REPORT_SCRIPT = """<script>
+(() => {
+  const search = document.querySelector('#report-search');
+  const severity = document.querySelector('#report-severity');
+  const rule = document.querySelector('#report-rule');
+  const rows = [...document.querySelectorAll('tbody tr')];
+  const count = document.querySelector('#visible-count');
+  const apply = () => {
+    const query = search.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach((row) => {
+      const show = (!query || row.textContent.toLowerCase().includes(query))
+        && (!severity.value || row.dataset.severity === severity.value)
+        && (!rule.value || row.dataset.rule === rule.value);
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    count.textContent = `显示 ${visible}/${rows.length} 个问题`;
+  };
+  [search, severity, rule].forEach((control) => control.addEventListener('input', apply));
+  apply();
+})();
+</script>"""
 
 
 def _slide_svg(result: ScanResult, found) -> str:  # type: ignore[no-untyped-def]
