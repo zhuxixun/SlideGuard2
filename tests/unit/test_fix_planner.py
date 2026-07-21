@@ -7,7 +7,7 @@ from pptx import Presentation
 from slideguard.pptx.importer import inspect_pptx
 from slideguard.repair.planner import FixPlanError, build_fix_plan, validate_plan_source
 from slideguard.rules.factory import issue
-from slideguard.rules.models import Severity
+from slideguard.rules.models import IssueStatus, Severity
 from slideguard.scan.models import ScanMode, ScanRequest
 from slideguard.scan.orchestrator import run_scan
 
@@ -86,3 +86,11 @@ def test_source_hash_change_invalidates_plan(tmp_path: Path) -> None:
     result.snapshot.file_identity.path.write_bytes(b"changed")
     with pytest.raises(FixPlanError, match="发生变化"):
         validate_plan_source(plan)
+
+
+def test_fix_plan_rejects_ignored_issue(tmp_path: Path) -> None:
+    result = _result(tmp_path)
+    ignored = replace(result.issues[0], status=IssueStatus.IGNORED)
+    result = replace(result, issues=(ignored, *result.issues[1:]))
+    with pytest.raises(FixPlanError, match="不是待处理状态"):
+        build_fix_plan(result, (ignored.issue_id,), tmp_path / "fixed.pptx")

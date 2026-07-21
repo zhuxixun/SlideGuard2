@@ -51,10 +51,12 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "导出 Excel 报告" in html
     assert "/api/reports/export" in javascript
     assert "修复选中项" in html
+    assert "修复此问题" in html
     assert "原始文件始终保留" in html
     assert "/api/repairs/prepare" in javascript
     assert "/api/repairs/execute" in javascript
     assert "repairAllowed" in javascript
+    assert "prepareRepair([filteredIssues[activeIssueIndex].issue_id])" in javascript
     assert "未发现符合当前规则的问题" in javascript
     assert "rule_set_version" in javascript
     assert "http://" not in html + javascript

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from slideguard.repair.models import FixOperation, FixPlan
 from slideguard.scan.models import ScanMode, ScanResult
+from slideguard.rules.models import IssueStatus
 
 
 PROPERTY_ORDER = {
@@ -48,6 +49,8 @@ def build_fix_plan(
     grouped: dict[tuple[str, str], list] = defaultdict(list)
     for issue_id in selected_ids:
         found = issues[issue_id]
+        if found.status is not IssueStatus.PENDING:
+            raise FixPlanError(f"问题 {issue_id} 不是待处理状态")
         if not found.can_auto_fix or found.fix_proposal is None:
             raise FixPlanError(f"问题 {issue_id} 不支持自动修复")
         if not found.object_keys:

@@ -37,6 +37,7 @@ const nodes = {
   previousIssue: document.querySelector("#previous-issue"),
   nextIssue: document.querySelector("#next-issue"),
   ignoreIssue: document.querySelector("#ignore-issue"),
+  repairIssue: document.querySelector("#repair-issue"),
   exportHtml: document.querySelector("#export-html"),
   exportXlsx: document.querySelector("#export-xlsx"),
   exportStatus: document.querySelector("#export-status"),
@@ -536,10 +537,16 @@ function repairAllowed() {
   return lastScanResult?.complete && lastScanResult.mode === "standard";
 }
 
-nodes.repairSelected.addEventListener("click", async () => {
+nodes.repairSelected.addEventListener("click", () => prepareRepair([...selectedIssueIds]));
+nodes.repairIssue.addEventListener("click", () => {
+  if (activeIssueIndex < 0) return;
+  prepareRepair([filteredIssues[activeIssueIndex].issue_id]);
+});
+
+async function prepareRepair(issueIds) {
   const response = await apiFetch("/api/repairs/prepare", {
     method: "POST",
-    body: JSON.stringify({ issue_ids: [...selectedIssueIds] }),
+    body: JSON.stringify({ issue_ids: issueIds }),
   });
   const data = await response.json();
   if (!response.ok) { window.alert(data.detail?.message || "无法生成修复计划"); return; }
@@ -556,7 +563,7 @@ nodes.repairSelected.addEventListener("click", async () => {
   nodes.repairStatus.textContent = "";
   nodes.confirmRepair.disabled = false;
   nodes.repairDialog.showModal();
-});
+}
 nodes.closeRepair.addEventListener("click", async () => {
   await apiFetch("/api/repairs/prepare", { method: "DELETE" });
   nodes.repairDialog.close();
@@ -595,6 +602,7 @@ async function showIssue(index) {
     .forEach((value, valueIndex) => { values[valueIndex].textContent = value; });
   nodes.issueTechnical.textContent = `规则：${found.rule_id}\n对象：${found.object_keys.join(", ")}\n标准来源：${found.standard_source}`;
   nodes.ignoreIssue.textContent = found.status === "ignored" ? "取消忽略" : "忽略";
+  nodes.repairIssue.hidden = !(repairAllowed() && found.can_auto_fix && found.status === "pending");
   nodes.previousIssue.disabled = index === 0;
   nodes.nextIssue.disabled = index === filteredIssues.length - 1;
   const response = await apiFetch(`/api/scans/current/slides/${found.slide_index}/preview?issue_id=${encodeURIComponent(found.issue_id)}`);
