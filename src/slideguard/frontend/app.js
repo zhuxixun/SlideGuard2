@@ -237,6 +237,12 @@ function displayImportedFile(file) {
     nodes.dropZone.classList.remove("dragging");
   });
 });
+nodes.dropZone.addEventListener("keydown", (event) => {
+  if ((event.key === "Enter" || event.key === " ") && !scanRunning) {
+    event.preventDefault();
+    nodes.openPptx.click();
+  }
+});
 nodes.dropZone.addEventListener("drop", async (event) => {
   if (scanRunning) return;
   const files = [...event.dataTransfer.files];

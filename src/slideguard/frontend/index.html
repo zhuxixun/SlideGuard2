@@ -3,15 +3,18 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SlideGuard Phase 0</title>
+    <title>SlideGuard</title>
     <link rel="stylesheet" href="/assets/app.css">
   </head>
   <body>
     <main class="shell">
       <header>
-        <div>
-          <h1>SlideGuard</h1>
-          <p class="muted">文件仅在本机处理，不会上传或访问互联网。</p>
+        <div class="brand">
+          <div class="logo" aria-hidden="true">SG</div>
+          <div>
+            <div class="row"><h1>SlideGuard</h1><span class="offline-badge">离线运行</span></div>
+            <p class="muted">文件仅在本机处理，不会上传或访问互联网。</p>
+          </div>
         </div>
         <button id="exit" class="secondary" type="button">退出 SlideGuard</button>
       </header>
@@ -29,7 +32,7 @@
           </div>
           <button id="open-pptx" type="button" disabled>打开 PPT 文件</button>
         </div>
-        <div id="pptx-drop-zone" class="drop-zone" tabindex="0">
+        <div id="pptx-drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="选择或拖入 PPTX 文件">
           将 .pptx 文件拖到此处
           <small>文件仅传递给本机 SlideGuard 服务进行处理</small>
         </div>
