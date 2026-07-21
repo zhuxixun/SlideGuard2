@@ -54,7 +54,7 @@ SlideGuard MVP 采用单进程 Python 桌面应用：
 ```text
 SlideGuard2/
   pyproject.toml
-  requirements.lock
+  uv.lock
   src/slideguard/
     __main__.py
     app.py
