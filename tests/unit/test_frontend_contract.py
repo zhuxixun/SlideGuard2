@@ -61,5 +61,6 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "updateRepairConfirmation" in javascript
     assert "未发现符合当前规则的问题" in javascript
     assert "rule_set_version" in javascript
+    assert "这些范围不得视为检查通过" in javascript
     assert "http://" not in html + javascript
     assert "https://" not in html + javascript

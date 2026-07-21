@@ -33,10 +33,11 @@ def export_html(result: ScanResult, destination: Path, *, software_version: str 
         "<div class='incomplete'>敏感词库为空，本项未发现问题不代表无敏感内容。</div>"
         if result.sensitive_lexicon_empty else ""
     )
+    unsupported_warning = _html_unsupported_summary(result)
     document = f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>SlideGuard 质检报告</title>
 <style>body{{font-family:'Microsoft YaHei',sans-serif;margin:32px;color:#222}}h1{{color:#c00000}}.incomplete{{padding:16px;background:#ffd9d9;color:#8b0000;font-weight:bold}}.filters{{display:flex;gap:8px;margin:18px 0}}.filters input,.filters select{{padding:7px;border:1px solid #aaa}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top}}th{{background:#f2f2f2}}.S1{{color:#a00000;font-weight:bold}}.preview{{width:240px;max-height:140px}}</style></head>
-<body><h1>SlideGuard 质检报告</h1>{incomplete}{lexicon_warning}
+<body><h1>SlideGuard 质检报告</h1>{incomplete}{lexicon_warning}{unsupported_warning}
 <dl><dt>文件名</dt><dd>{escape(result.snapshot.file_identity.path.name)}</dd><dt>路径</dt><dd>{escape(str(result.snapshot.file_identity.path))}</dd><dt>大小</dt><dd>{result.snapshot.file_identity.size_bytes} bytes</dd><dt>页数</dt><dd>{len(result.snapshot.slides)}</dd><dt>扫描模式</dt><dd>{escape(result.mode.value)}</dd><dt>完整性</dt><dd>{'完整' if result.complete else '未完成'}</dd><dt>规则集</dt><dd>{escape(result.rule_set_version)}</dd><dt>软件版本</dt><dd>{escape(software_version)}</dd><dt>开始时间</dt><dd>{result.started_at.isoformat()}</dd><dt>结束时间</dt><dd>{result.finished_at.isoformat()}</dd></dl>
 {execution}<p>S1 {severity['S1']} / S2 {severity['S2']} / S3 {severity['S3']} / S4 {severity['S4']}；涉及页面 {affected_pages}；可自动修复 {fixable}</p>{comparison}<ul>{rule_summary}</ul>
 <div class="filters"><input id="report-search" type="search" placeholder="搜索问题明细"><select id="report-severity"><option value="">全部级别</option><option>S1</option><option>S2</option><option>S3</option><option>S4</option></select><select id="report-rule"><option value="">全部规则</option>{rule_options}</select><span id="visible-count"></span></div>
@@ -67,6 +68,8 @@ def export_xlsx(result: ScanResult, destination: Path, *, software_version: str 
         ("开始时间", result.started_at.isoformat()),
         ("结束时间", result.finished_at.isoformat()),
         ("敏感词库状态", "为空：未发现问题不代表无敏感内容" if result.sensitive_lexicon_empty else "已配置或未执行R010"),
+        ("未支持对象总数", len(result.snapshot.unsupported_objects)),
+        *_xlsx_unsupported_summary(result),
         ("请求执行规则", "、".join(result.requested_rules)),
         ("已完成规则", "、".join(result.completed_rules)),
         ("失败规则", "；".join(f"{item.rule_id}: {item.message}" for item in result.failures) or "无"),
@@ -132,6 +135,34 @@ def _html_execution_summary(result: ScanResult) -> str:
         f"<p><strong>请求执行规则：</strong>{requested}</p>"
         f"<p><strong>已完成规则：</strong>{completed}</p>"
         f"<div><strong>失败规则：</strong>{failure_block}</div>"
+    )
+
+
+def _unsupported_counts(result: ScanResult) -> Counter[tuple[int, str]]:
+    return Counter(
+        (item.slide_index, item.object_type)
+        for item in result.snapshot.unsupported_objects
+    )
+
+
+def _html_unsupported_summary(result: ScanResult) -> str:
+    counts = _unsupported_counts(result)
+    if not counts:
+        return ""
+    items = "".join(
+        f"<li>第 {page} 页 {escape(object_type)}：{count} 个</li>"
+        for (page, object_type), count in sorted(counts.items())
+    )
+    return (
+        "<div class='incomplete'><strong>存在未支持检查的对象，以下范围不得视为检查通过：</strong>"
+        f"<ul>{items}</ul></div>"
+    )
+
+
+def _xlsx_unsupported_summary(result: ScanResult) -> tuple[tuple[str, object], ...]:
+    return tuple(
+        (f"未支持对象-第{page}页-{object_type}", count)
+        for (page, object_type), count in sorted(_unsupported_counts(result).items())
     )
 
 

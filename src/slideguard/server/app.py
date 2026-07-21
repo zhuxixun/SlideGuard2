@@ -616,6 +616,14 @@ def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
             "complete": result.complete,
             "cancelled": result.cancelled,
             "sensitive_lexicon_empty": result.sensitive_lexicon_empty,
+            "unsupported_objects": [
+                {
+                    "slide_index": item.slide_index,
+                    "object_key": item.key,
+                    "object_type": item.object_type,
+                }
+                for item in result.snapshot.unsupported_objects
+            ],
             "failures": [
                 {"rule_id": failure.rule_id, "message": failure.message}
                 for failure in result.failures

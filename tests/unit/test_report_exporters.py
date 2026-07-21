@@ -10,6 +10,7 @@ from slideguard.reporting.exporters import default_report_name, export_html, exp
 from slideguard.rules.factory import issue
 from slideguard.rules.models import Severity
 from slideguard.scan.models import RepairComparison, ScanMode, ScanRequest
+from slideguard.pptx.snapshot import UnsupportedObject
 from slideguard.scan.orchestrator import run_scan
 
 
@@ -122,3 +123,26 @@ def test_reports_warn_when_sensitive_lexicon_is_empty(tmp_path: Path) -> None:
     summary = load_workbook(xlsx_path)["扫描摘要"]
     values = {row[0].value: row[1].value for row in summary.iter_rows(min_row=2)}
     assert values["敏感词库状态"].startswith("为空")
+
+
+def test_reports_summarize_unsupported_objects_by_page_and_type(tmp_path: Path) -> None:
+    result = _result(tmp_path)
+    snapshot = replace(
+        result.snapshot,
+        unsupported_objects=(
+            UnsupportedObject(1, "shape:1", "MEDIA"),
+            UnsupportedObject(1, "shape:2", "MEDIA"),
+        ),
+    )
+    result = replace(result, snapshot=snapshot)
+    html_path = tmp_path / "unsupported.html"
+    xlsx_path = tmp_path / "unsupported.xlsx"
+    export_html(result, html_path)
+    export_xlsx(result, xlsx_path)
+    content = html_path.read_text(encoding="utf-8")
+    assert "以下范围不得视为检查通过" in content
+    assert "第 1 页 MEDIA：2 个" in content
+    summary = load_workbook(xlsx_path)["扫描摘要"]
+    values = {row[0].value: row[1].value for row in summary.iter_rows(min_row=2)}
+    assert values["未支持对象总数"] == 2
+    assert values["未支持对象-第1页-MEDIA"] == 2

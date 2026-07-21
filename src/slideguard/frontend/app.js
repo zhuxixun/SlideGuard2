@@ -420,6 +420,14 @@ function renderResultSummary(result, counts) {
   if (result.sensitive_lexicon_empty) {
     lines.unshift("敏感词库为空，本项未发现问题不代表无敏感内容。");
   }
+  if (result.unsupported_objects?.length) {
+    const groups = new Map();
+    result.unsupported_objects.forEach((item) => {
+      const key = `第 ${item.slide_index} 页 ${item.object_type}`;
+      groups.set(key, (groups.get(key) || 0) + 1);
+    });
+    lines.push(`未支持检查的对象：${[...groups].map(([key, count]) => `${key} ${count} 个`).join("；")}。这些范围不得视为检查通过。`);
+  }
   if (!result.complete) lines.unshift("扫描未完成：以下结果仅包含已经完成的检查。");
   nodes.scanResult.replaceChildren(...lines.map((line, index) => {
     const paragraph = document.createElement("p");
