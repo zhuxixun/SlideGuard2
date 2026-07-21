@@ -54,6 +54,8 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "fixable-filter" in html
     assert "status-filter" in html
     assert "showIssue" in javascript
+    assert "previewRequestId" in javascript
+    assert "预览不可用；请查看技术信息和判断依据" in javascript
     assert "/preview?issue_id=" in javascript
     assert "导出 HTML 报告" in html
     assert "导出 Excel 报告" in html

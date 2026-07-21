@@ -73,6 +73,7 @@ let scanIssues = [];
 let filteredIssues = [];
 let activeIssueIndex = -1;
 let previewUrl;
+let previewRequestId = 0;
 let lastScanResult;
 let currentFile;
 let scanRunning = false;
@@ -294,6 +295,10 @@ function resetScanResult() {
   nodes.repairSelected.hidden = true;
   nodes.issuesPanel.hidden = true;
   nodes.issueDetail.hidden = true;
+  previewRequestId += 1;
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = undefined;
+  nodes.issuePreview.removeAttribute("src");
 }
 document.querySelectorAll('input[name="scan-mode"]').forEach((radio) => {
   radio.addEventListener("change", () => {
@@ -658,12 +663,30 @@ async function showIssue(index) {
   nodes.repairIssue.hidden = !(repairAllowed() && found.can_auto_fix && found.status === "pending");
   nodes.previousIssue.disabled = index === 0;
   nodes.nextIssue.disabled = index === filteredIssues.length - 1;
-  const response = await apiFetch(`/api/scans/current/slides/${found.slide_index}/preview?issue_id=${encodeURIComponent(found.issue_id)}`);
-  if (response.ok) {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    previewUrl = URL.createObjectURL(await response.blob());
-    nodes.issuePreview.src = previewUrl;
+  const requestId = ++previewRequestId;
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = undefined;
+  nodes.issuePreview.removeAttribute("src");
+  nodes.issuePreview.alt = "正在加载问题所在幻灯片预览";
+  let response;
+  try {
+    response = await apiFetch(`/api/scans/current/slides/${found.slide_index}/preview?issue_id=${encodeURIComponent(found.issue_id)}`);
+  } catch {
+    if (requestId === previewRequestId) {
+      nodes.issuePreview.alt = `第 ${found.slide_index} 页预览不可用；请查看技术信息和判断依据。`;
+    }
+    return;
   }
+  if (requestId !== previewRequestId) return;
+  if (!response.ok) {
+    nodes.issuePreview.alt = `第 ${found.slide_index} 页预览不可用；请查看技术信息和判断依据。`;
+    return;
+  }
+  const previewBlob = await response.blob();
+  if (requestId !== previewRequestId) return;
+  previewUrl = URL.createObjectURL(previewBlob);
+  nodes.issuePreview.src = previewUrl;
+  nodes.issuePreview.alt = `第 ${found.slide_index} 页问题预览`;
 }
 
 nodes.close.addEventListener("click", closeDialog);
