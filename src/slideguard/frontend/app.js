@@ -430,9 +430,13 @@ function renderResultSummary(result, counts) {
   const completedAt = new Date(result.finished_at).toLocaleString("zh-CN", { hour12: false });
   const lines = [
     `${currentFile?.name || "当前文件"} · ${modeLabels[result.mode] || result.mode} · ${result.rule_set_version} · ${completedAt}`,
+    `实际执行规则：${result.completed_rules.length ? result.completed_rules.join("、") : "暂无"}`,
     `共发现 ${result.issues.length} 个问题：S1 ${counts.S1}，S2 ${counts.S2}，S3 ${counts.S3}，S4 ${counts.S4}；涉及 ${affectedPages} 页；可自动修复 ${fixable} 个。`,
     result.issues.length ? `按类型：${[...byRule].map(([rule, count]) => `${rule} ${count}`).join("，")}` : "未发现符合当前规则的问题。",
   ];
+  result.failures.forEach((failure) => {
+    lines.push(`失败规则 ${failure.rule_id}：${failure.message}`);
+  });
   if (result.sensitive_lexicon_empty) {
     lines.unshift("敏感词库为空，本项未发现问题不代表无敏感内容。");
   }
@@ -444,11 +448,15 @@ function renderResultSummary(result, counts) {
     });
     lines.push(`未支持检查的对象：${[...groups].map(([key, count]) => `${key} ${count} 个`).join("；")}。这些范围不得视为检查通过。`);
   }
-  if (!result.complete) lines.unshift("扫描未完成：以下结果仅包含已经完成的检查。");
+  if (!result.complete) {
+    lines.unshift(result.cancelled
+      ? "扫描已取消：以下结果仅包含取消前已经完成的检查。"
+      : "扫描未完成：以下结果仅包含已经完成的检查。");
+  }
   nodes.scanResult.replaceChildren(...lines.map((line, index) => {
     const paragraph = document.createElement("p");
     paragraph.textContent = line;
-    if ((!result.complete && index === 0) || line.startsWith("敏感词库为空")) paragraph.className = "error";
+    if ((!result.complete && index === 0) || line.startsWith("敏感词库为空") || line.startsWith("失败规则")) paragraph.className = "error";
     return paragraph;
   }));
 }
