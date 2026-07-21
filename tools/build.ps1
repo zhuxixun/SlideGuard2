@@ -27,8 +27,27 @@ try {
         (Join-Path $projectRoot "data\config\sensitive-terms.txt") `
         -Destination (Join-Path $dataRoot "config\sensitive-terms.txt") `
         -Force
+
+    $archivePath = Join-Path $projectRoot "dist\SlideGuard.zip"
+    if (Test-Path -LiteralPath $archivePath) {
+        Remove-Item -LiteralPath $archivePath -Force
+    }
+    Compress-Archive -Path (Join-Path $releaseRoot "*") -DestinationPath $archivePath -CompressionLevel Optimal
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
+    try {
+        $entryNames = $archive.Entries.FullName -replace '\\', '/'
+        foreach ($required in @("SlideGuard.exe", "data/config/sensitive-terms.txt")) {
+            if ($required -notin $entryNames) {
+                throw "Release archive is missing $required"
+            }
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
 }
 finally {
     Pop-Location
 }
-
