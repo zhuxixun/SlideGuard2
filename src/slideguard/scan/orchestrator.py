@@ -111,6 +111,9 @@ def run_scan(
         cancelled=cancelled,
         started_at=started,
         finished_at=datetime.now(timezone.utc),
+        sensitive_lexicon_empty=(
+            "R010" in selected and not terms and "R010" not in unavailable_rules
+        ),
     )
 
 

@@ -110,3 +110,15 @@ def test_reports_include_repair_comparison(tmp_path: Path) -> None:
     values = {row[0].value: row[1].value for row in summary.iter_rows(min_row=2)}
     assert values["修复选中问题数"] == 3
     assert values["修复后新增问题数"] == 1
+
+
+def test_reports_warn_when_sensitive_lexicon_is_empty(tmp_path: Path) -> None:
+    result = replace(_result(tmp_path), sensitive_lexicon_empty=True)
+    html_path = tmp_path / "empty-lexicon.html"
+    xlsx_path = tmp_path / "empty-lexicon.xlsx"
+    export_html(result, html_path)
+    export_xlsx(result, xlsx_path)
+    assert "敏感词库为空，本项未发现问题不代表无敏感内容" in html_path.read_text(encoding="utf-8")
+    summary = load_workbook(xlsx_path)["扫描摘要"]
+    values = {row[0].value: row[1].value for row in summary.iter_rows(min_row=2)}
+    assert values["敏感词库状态"].startswith("为空")

@@ -68,3 +68,4 @@ class ScanResult:
     started_at: datetime
     finished_at: datetime
     repair_comparison: RepairComparison | None = None
+    sensitive_lexicon_empty: bool = False

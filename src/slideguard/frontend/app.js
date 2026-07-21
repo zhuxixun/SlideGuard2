@@ -417,11 +417,14 @@ function renderResultSummary(result, counts) {
     `共发现 ${result.issues.length} 个问题：S1 ${counts.S1}，S2 ${counts.S2}，S3 ${counts.S3}，S4 ${counts.S4}；涉及 ${affectedPages} 页；可自动修复 ${fixable} 个。`,
     result.issues.length ? `按类型：${[...byRule].map(([rule, count]) => `${rule} ${count}`).join("，")}` : "未发现符合当前规则的问题。",
   ];
+  if (result.sensitive_lexicon_empty) {
+    lines.unshift("敏感词库为空，本项未发现问题不代表无敏感内容。");
+  }
   if (!result.complete) lines.unshift("扫描未完成：以下结果仅包含已经完成的检查。");
   nodes.scanResult.replaceChildren(...lines.map((line, index) => {
     const paragraph = document.createElement("p");
     paragraph.textContent = line;
-    if (!result.complete && index === 0) paragraph.className = "error";
+    if ((!result.complete && index === 0) || line.startsWith("敏感词库为空")) paragraph.className = "error";
     return paragraph;
   }));
 }

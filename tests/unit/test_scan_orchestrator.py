@@ -126,6 +126,17 @@ def test_preflight_rule_failure_does_not_block_other_rules(tmp_path: Path) -> No
     assert result.completed_rules == ("R002",)
     assert result.failures[0].rule_id == "R010"
     assert result.complete is False
+    assert result.sensitive_lexicon_empty is False
+
+
+def test_empty_sensitive_lexicon_is_recorded_when_r010_runs(tmp_path: Path) -> None:
+    result = run_scan(
+        _imported(tmp_path),
+        ScanRequest(ScanMode.CUSTOM, selected_rules=("R010",)),
+        rules={"R010": lambda *_: ()},
+    )
+    assert result.complete is True
+    assert result.sensitive_lexicon_empty is True
 
 
 def test_cancellation_stops_scheduling_new_rules(tmp_path: Path) -> None:

@@ -615,6 +615,7 @@ def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
             "completed_rules": result.completed_rules,
             "complete": result.complete,
             "cancelled": result.cancelled,
+            "sensitive_lexicon_empty": result.sensitive_lexicon_empty,
             "failures": [
                 {"rule_id": failure.rule_id, "message": failure.message}
                 for failure in result.failures
