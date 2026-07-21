@@ -13,6 +13,9 @@ const nodes = {
   scanProgress: document.querySelector("#scan-progress"),
   scanResult: document.querySelector("#scan-result"),
   customRules: document.querySelector("#custom-rules"),
+  selectAllRules: document.querySelector("#select-all-rules"),
+  clearAllRules: document.querySelector("#clear-all-rules"),
+  defaultRules: document.querySelector("#default-rules"),
   viewIssues: document.querySelector("#view-issues"),
   issuesPanel: document.querySelector("#issues-panel"),
   issuesCount: document.querySelector("#issues-count"),
@@ -68,6 +71,7 @@ let activeIssueIndex = -1;
 let previewUrl;
 let lastScanResult;
 let currentFile;
+let scanRunning = false;
 const selectedIssueIds = new Set();
 
 function apiFetch(path, options = {}) {
@@ -229,11 +233,52 @@ function resetScanResult() {
 document.querySelectorAll('input[name="scan-mode"]').forEach((radio) => {
   radio.addEventListener("change", () => {
     nodes.customRules.hidden = selectedMode() !== "custom";
+    updateScanAvailability();
   });
 });
+const ruleCheckboxes = [...nodes.customRules.querySelectorAll("input[data-rule]")];
+const ruleModules = [...nodes.customRules.querySelectorAll("[data-rule-module]")];
+
+function syncRuleModules() {
+  ruleModules.forEach((module) => {
+    const master = module.querySelector(".module-rule");
+    const children = [...module.querySelectorAll("input[data-rule]")];
+    const checked = children.filter((checkbox) => checkbox.checked).length;
+    master.checked = checked === children.length;
+    master.indeterminate = checked > 0 && checked < children.length;
+  });
+}
+
+function updateScanAvailability() {
+  const customEmpty = selectedMode() === "custom" && !ruleCheckboxes.some((checkbox) => checkbox.checked);
+  nodes.startScan.disabled = scanRunning || !currentFile || customEmpty;
+}
+
+ruleCheckboxes.forEach((checkbox) => checkbox.addEventListener("change", () => {
+  syncRuleModules();
+  updateScanAvailability();
+}));
+ruleModules.forEach((module) => {
+  module.querySelector(".module-rule").addEventListener("change", (event) => {
+    module.querySelectorAll("input[data-rule]").forEach((checkbox) => {
+      checkbox.checked = event.target.checked;
+    });
+    syncRuleModules();
+    updateScanAvailability();
+  });
+});
+function setAllRules(checked) {
+  ruleCheckboxes.forEach((checkbox) => { checkbox.checked = checked; });
+  syncRuleModules();
+  updateScanAvailability();
+}
+nodes.selectAllRules.addEventListener("click", () => setAllRules(true));
+nodes.clearAllRules.addEventListener("click", () => setAllRules(false));
+nodes.defaultRules.addEventListener("click", () => setAllRules(true));
+
 nodes.startScan.addEventListener("click", async () => {
   const mode = selectedMode();
-  const selectedRules = [...nodes.customRules.querySelectorAll('input[type="checkbox"]:checked')]
+  const selectedRules = [...nodes.customRules.querySelectorAll('input[data-rule]:checked')]
     .map((checkbox) => checkbox.value);
   if (mode === "custom" && !selectedRules.length) {
     window.alert("自定义检查至少选择一条规则。");
@@ -249,6 +294,7 @@ nodes.startScan.addEventListener("click", async () => {
     return;
   }
   nodes.startScan.disabled = true;
+  scanRunning = true;
   nodes.cancelScan.hidden = false;
   nodes.scanResult.hidden = true;
   nodes.startScan.textContent = "开始检查";
@@ -266,6 +312,7 @@ function selectedMode() {
 
 function renderScanState(state) {
   if (state.state === "running") {
+    scanRunning = true;
     const labels = { parsing: "解析文件", preview: "生成页面预览", checking: "执行检查", summarizing: "汇总结果" };
     const progress = state.progress;
     nodes.scanProgress.textContent = progress
@@ -276,10 +323,11 @@ function renderScanState(state) {
     return;
   }
   if (["completed", "incomplete", "failed"].includes(state.state)) {
+    scanRunning = false;
     nodes.cancelScan.hidden = true;
     nodes.cancelScan.disabled = false;
     nodes.cancelScan.textContent = "取消检查";
-    nodes.startScan.disabled = false;
+    updateScanAvailability();
     if (state.result) {
       const counts = { S1: 0, S2: 0, S3: 0, S4: 0 };
       state.result.issues.forEach((found) => { counts[found.severity] += 1; });

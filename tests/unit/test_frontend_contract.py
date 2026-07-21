@@ -21,9 +21,15 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "快速检查" in html
     assert "标准检查" in html
     assert "自定义检查" in html
+    assert "全不选" in html
+    assert "恢复默认" in html
+    assert "module-rule" in html
+    assert html.count("data-rule type=\"checkbox\"") == 9
     assert "/api/scans" in javascript
     assert "/api/scans/current/cancel" in javascript
     assert "renderScanState" in javascript
+    assert "master.indeterminate" in javascript
+    assert "updateScanAvailability" in javascript
     assert "问题列表" in html
     assert "issue-search" in html
     assert "page-filter" in html

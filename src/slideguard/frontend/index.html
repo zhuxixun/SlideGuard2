@@ -52,16 +52,33 @@
           <label><input name="scan-mode" type="radio" value="standard"> 标准检查</label>
           <label><input name="scan-mode" type="radio" value="custom"> 自定义检查</label>
         </div>
-        <div id="custom-rules" class="rule-grid" hidden>
-          <label><input type="checkbox" value="R002" checked> R002 空白页面</label>
-          <label><input type="checkbox" value="R003" checked> R003 页面外元素</label>
-          <label><input type="checkbox" value="R004" checked> R004 字体一致性</label>
-          <label><input type="checkbox" value="R005" checked> R005 字号一致性</label>
-          <label><input type="checkbox" value="R006" checked> R006 文本溢出</label>
-          <label><input type="checkbox" value="R007" checked> R007 元素对齐</label>
-          <label><input type="checkbox" value="R008" checked> R008 文字安全边距</label>
-          <label><input type="checkbox" value="R009" checked> R009 标题一致性</label>
-          <label><input type="checkbox" value="R010" checked> R010 敏感及残留文本</label>
+        <div id="custom-rules" class="custom-rules" hidden>
+          <div class="row rule-actions">
+            <button id="select-all-rules" class="secondary" type="button">全选</button>
+            <button id="clear-all-rules" class="secondary" type="button">全不选</button>
+            <button id="default-rules" class="secondary" type="button">恢复默认</button>
+          </div>
+          <fieldset data-rule-module>
+            <legend><label><input class="module-rule" type="checkbox" checked> 文档基础健康</label></legend>
+            <label><input data-rule type="checkbox" value="R002" checked><span><strong>R002 空白页面</strong><small>识别疑似空白页 · 需手动处理</small></span></label>
+            <label><input data-rule type="checkbox" value="R003" checked><span><strong>R003 页面外元素</strong><small>定位完全位于画布外的对象 · 需手动处理</small></span></label>
+          </fieldset>
+          <fieldset data-rule-module>
+            <legend><label><input class="module-rule" type="checkbox" checked> 文本规范</label></legend>
+            <label><input data-rule type="checkbox" value="R004" checked><span><strong>R004 字体一致性</strong><small>非微软雅黑字体 · 支持自动修复</small></span></label>
+            <label><input data-rule type="checkbox" value="R005" checked><span><strong>R005 字号一致性</strong><small>字号过小或偏离主流值 · 条件性自动修复</small></span></label>
+            <label><input data-rule type="checkbox" value="R006" checked><span><strong>R006 文本溢出</strong><small>检查文字裁断和超出 · 需手动处理</small></span></label>
+            <label><input data-rule type="checkbox" value="R010" checked><span><strong>R010 敏感及残留文本</strong><small>按本地词库精确匹配 · 需手动处理</small></span></label>
+          </fieldset>
+          <fieldset data-rule-module>
+            <legend><label><input class="module-rule" type="checkbox" checked> 版面布局</label></legend>
+            <label><input data-rule type="checkbox" value="R007" checked><span><strong>R007 元素对齐</strong><small>识别重复排列中的偏离对象 · 支持自动修复</small></span></label>
+            <label><input data-rule type="checkbox" value="R008" checked><span><strong>R008 文字安全边距</strong><small>检查页面边缘文字 · 需手动处理</small></span></label>
+          </fieldset>
+          <fieldset data-rule-module>
+            <legend><label><input class="module-rule" type="checkbox" checked> 跨页面一致性</label></legend>
+            <label><input data-rule type="checkbox" value="R009" checked><span><strong>R009 标题一致性</strong><small>检查标题样式和参考线 · 支持自动修复</small></span></label>
+          </fieldset>
         </div>
         <div class="row scan-actions">
           <button id="start-scan" type="button" disabled>开始检查</button>
