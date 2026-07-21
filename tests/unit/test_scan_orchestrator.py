@@ -51,6 +51,9 @@ def test_quick_scan_runs_exact_required_rules_and_progress_stages(tmp_path: Path
         ScanStage.PREVIEW,
         ScanStage.SUMMARIZING,
     ]
+    finished = [event for event in events if event.stage is ScanStage.CHECKING][-1]
+    assert finished.completed_rule_ids == QUICK_RULES
+    assert finished.severity_counts == (0, 0, 0, 0)
 
 
 def test_standard_scan_runs_all_base_rules(tmp_path: Path) -> None:

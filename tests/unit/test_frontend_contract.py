@@ -34,6 +34,8 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "/api/scans" in javascript
     assert "/api/scans/current/cancel" in javascript
     assert "renderScanState" in javascript
+    assert "completed_rule_ids" in javascript
+    assert "severity_counts" in javascript
     assert "master.indeterminate" in javascript
     assert "updateScanAvailability" in javascript
     assert "问题列表" in html

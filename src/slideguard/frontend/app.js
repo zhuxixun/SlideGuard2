@@ -363,9 +363,13 @@ function renderScanState(state) {
     scanRunning = true;
     const labels = { parsing: "解析文件", preview: "生成页面预览", checking: "执行检查", summarizing: "汇总结果" };
     const progress = state.progress;
-    nodes.scanProgress.textContent = progress
-      ? `${labels[progress.stage]}${progress.current_rule ? ` · ${progress.current_rule}` : ""} · ${progress.completed_rules}/${progress.total_rules}`
-      : "扫描准备中…";
+    if (progress) {
+      const counts = progress.severity_counts || { S1: 0, S2: 0, S3: 0, S4: 0 };
+      const completed = progress.completed_rule_ids?.length ? progress.completed_rule_ids.join("、") : "暂无";
+      nodes.scanProgress.textContent = `${labels[progress.stage]}${progress.current_rule ? ` · ${progress.current_rule}` : ""} · ${progress.completed_rules}/${progress.total_rules} · 已完成：${completed} · 已发现：S1 ${counts.S1}，S2 ${counts.S2}，S3 ${counts.S3}，S4 ${counts.S4}`;
+    } else {
+      nodes.scanProgress.textContent = "扫描准备中…";
+    }
     nodes.startScan.disabled = true;
     nodes.cancelScan.hidden = false;
     return;

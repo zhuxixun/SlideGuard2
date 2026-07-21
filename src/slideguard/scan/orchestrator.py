@@ -75,9 +75,10 @@ def run_scan(
     for rule_id in selected:
         if cancellation.cancelled:
             break
-        progress(ScanProgress(ScanStage.CHECKING, len(completed), len(selected), rule_id))
+        progress(_checking_progress(completed, selected, issues, rule_id))
         if rule_id in unavailable_rules:
             failures.append(RuleFailure(rule_id, unavailable_rules[rule_id]))
+            progress(_checking_progress(completed, selected, issues, None))
             continue
         try:
             issues.extend(registry[rule_id](snapshot, terms))
@@ -85,6 +86,7 @@ def run_scan(
             failures.append(RuleFailure(rule_id, str(exc) or type(exc).__name__))
         else:
             completed.append(rule_id)
+        progress(_checking_progress(completed, selected, issues, None))
     progress(ScanProgress(ScanStage.SUMMARIZING, len(completed), len(selected)))
     unique_issues = _deduplicate_and_sort(issues)
     cancelled = cancellation.cancelled
@@ -143,4 +145,25 @@ def _deduplicate_and_sort(issues: list[Issue]) -> tuple[Issue, ...]:
                 found.issue_id,
             ),
         )
+    )
+
+
+def _checking_progress(
+    completed: list[str],
+    selected: tuple[str, ...],
+    issues: list[Issue],
+    current_rule: str | None,
+) -> ScanProgress:
+    unique_issues = _deduplicate_and_sort(issues)
+    counts = tuple(
+        sum(found.severity.value == level for found in unique_issues)
+        for level in ("S1", "S2", "S3", "S4")
+    )
+    return ScanProgress(
+        ScanStage.CHECKING,
+        len(completed),
+        len(selected),
+        current_rule,
+        tuple(completed),
+        counts,  # type: ignore[arg-type]
     )

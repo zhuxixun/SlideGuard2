@@ -588,6 +588,11 @@ def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
             "completed_rules": snapshot.progress.completed_rules,
             "total_rules": snapshot.progress.total_rules,
             "current_rule": snapshot.progress.current_rule,
+            "completed_rule_ids": snapshot.progress.completed_rule_ids,
+            "severity_counts": {
+                level: snapshot.progress.severity_counts[index]
+                for index, level in enumerate(("S1", "S2", "S3", "S4"))
+            },
         }
     if snapshot.result is not None:
         result = snapshot.result
