@@ -23,6 +23,7 @@ const nodes = {
   issueDescription: document.querySelector("#issue-description"),
   issueTechnical: document.querySelector("#issue-technical"),
   issueSearch: document.querySelector("#issue-search"),
+  pageFilter: document.querySelector("#page-filter"),
   severityFilter: document.querySelector("#severity-filter"),
   ruleFilter: document.querySelector("#rule-filter"),
   fixableFilter: document.querySelector("#fixable-filter"),
@@ -66,6 +67,7 @@ let filteredIssues = [];
 let activeIssueIndex = -1;
 let previewUrl;
 let lastScanResult;
+let currentFile;
 const selectedIssueIds = new Set();
 
 function apiFetch(path, options = {}) {
@@ -195,6 +197,8 @@ nodes.openPptx.addEventListener("click", async () => {
       return;
     }
     const sizeMb = (data.file.size_bytes / 1024 / 1024).toFixed(2);
+    currentFile = data.file;
+    resetScanResult();
     nodes.fileSummary.textContent = `${data.file.name} · ${sizeMb} MB · ${data.file.slide_count} 页`;
     nodes.startScan.disabled = false;
     nodes.scanProgress.textContent = "请选择检查模式";
@@ -206,6 +210,22 @@ nodes.openPptx.addEventListener("click", async () => {
     nodes.openPptx.disabled = false;
   }
 });
+
+function resetScanResult() {
+  scanIssues = [];
+  filteredIssues = [];
+  lastScanResult = undefined;
+  activeIssueIndex = -1;
+  selectedIssueIds.clear();
+  nodes.scanResult.hidden = true;
+  nodes.scanResult.replaceChildren();
+  nodes.viewIssues.hidden = true;
+  nodes.exportHtml.hidden = true;
+  nodes.exportXlsx.hidden = true;
+  nodes.repairSelected.hidden = true;
+  nodes.issuesPanel.hidden = true;
+  nodes.issueDetail.hidden = true;
+}
 document.querySelectorAll('input[name="scan-mode"]').forEach((radio) => {
   radio.addEventListener("change", () => {
     nodes.customRules.hidden = selectedMode() !== "custom";
@@ -231,6 +251,7 @@ nodes.startScan.addEventListener("click", async () => {
   nodes.startScan.disabled = true;
   nodes.cancelScan.hidden = false;
   nodes.scanResult.hidden = true;
+  nodes.startScan.textContent = "开始检查";
   nodes.scanProgress.textContent = "正在解析文件…";
 });
 nodes.cancelScan.addEventListener("click", async () => {
@@ -263,7 +284,7 @@ function renderScanState(state) {
       const counts = { S1: 0, S2: 0, S3: 0, S4: 0 };
       state.result.issues.forEach((found) => { counts[found.severity] += 1; });
       nodes.scanProgress.textContent = state.result.complete ? "检查完成" : "扫描未完成";
-      nodes.scanResult.textContent = `共发现 ${state.result.issues.length} 个问题：S1 ${counts.S1}，S2 ${counts.S2}，S3 ${counts.S3}，S4 ${counts.S4}`;
+      renderResultSummary(state.result, counts);
       nodes.scanResult.hidden = false;
       scanIssues = state.result.issues.map((found) => ({ ...found }));
       lastScanResult = state.result;
@@ -272,11 +293,33 @@ function renderScanState(state) {
       nodes.viewIssues.hidden = !scanIssues.length;
       nodes.exportHtml.hidden = false;
       nodes.exportXlsx.hidden = false;
-      prepareRuleFilter();
+      prepareIssueFilters();
+      nodes.startScan.textContent = "重新扫描";
     } else {
       nodes.scanProgress.textContent = state.error || "扫描失败";
     }
   }
+}
+
+function renderResultSummary(result, counts) {
+  const affectedPages = new Set(result.issues.map((found) => found.slide_index).filter((page) => page > 0)).size;
+  const fixable = result.issues.filter((found) => found.can_auto_fix).length;
+  const byRule = new Map();
+  result.issues.forEach((found) => byRule.set(found.rule_id, (byRule.get(found.rule_id) || 0) + 1));
+  const modeLabels = { quick: "快速检查", standard: "标准检查", custom: "自定义检查" };
+  const completedAt = new Date(result.finished_at).toLocaleString("zh-CN", { hour12: false });
+  const lines = [
+    `${currentFile?.name || "当前文件"} · ${modeLabels[result.mode] || result.mode} · ${result.rule_set_version} · ${completedAt}`,
+    `共发现 ${result.issues.length} 个问题：S1 ${counts.S1}，S2 ${counts.S2}，S3 ${counts.S3}，S4 ${counts.S4}；涉及 ${affectedPages} 页；可自动修复 ${fixable} 个。`,
+    result.issues.length ? `按类型：${[...byRule].map(([rule, count]) => `${rule} ${count}`).join("，")}` : "未发现符合当前规则的问题。",
+  ];
+  if (!result.complete) lines.unshift("扫描未完成：以下结果仅包含已经完成的检查。");
+  nodes.scanResult.replaceChildren(...lines.map((line, index) => {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = line;
+    if (!result.complete && index === 0) paragraph.className = "error";
+    return paragraph;
+  }));
 }
 nodes.viewIssues.addEventListener("click", () => {
   nodes.issuesPanel.hidden = false;
@@ -306,7 +349,7 @@ async function exportReport(format) {
     nodes.exportXlsx.disabled = false;
   }
 }
-[nodes.issueSearch, nodes.severityFilter, nodes.ruleFilter, nodes.fixableFilter, nodes.statusFilter]
+[nodes.issueSearch, nodes.pageFilter, nodes.severityFilter, nodes.ruleFilter, nodes.fixableFilter, nodes.statusFilter]
   .forEach((control) => control.addEventListener("input", applyIssueFilters));
 nodes.previousIssue.addEventListener("click", () => showIssue(Math.max(0, activeIssueIndex - 1)));
 nodes.nextIssue.addEventListener("click", () => showIssue(Math.min(filteredIssues.length - 1, activeIssueIndex + 1)));
@@ -332,7 +375,11 @@ nodes.ignoreIssue.addEventListener("click", async () => {
   }
 });
 
-function prepareRuleFilter() {
+function prepareIssueFilters() {
+  nodes.pageFilter.replaceChildren(new Option("全部页面", ""));
+  [...new Set(scanIssues.map((found) => found.slide_index))].sort((a, b) => a - b).forEach((page) => {
+    nodes.pageFilter.append(new Option(`第 ${page} 页`, String(page)));
+  });
   nodes.ruleFilter.replaceChildren(new Option("全部类型", ""));
   [...new Set(scanIssues.map((found) => found.rule_id))].forEach((rule) => {
     nodes.ruleFilter.append(new Option(rule, rule));
@@ -344,6 +391,7 @@ function applyIssueFilters() {
   filteredIssues = scanIssues.filter((found) => {
     const searchable = `${found.rule_id} ${found.actual_value} ${found.evidence} ${found.suggestion}`.toLowerCase();
     return (!query || searchable.includes(query))
+      && (!nodes.pageFilter.value || found.slide_index === Number(nodes.pageFilter.value))
       && (!nodes.severityFilter.value || found.severity === nodes.severityFilter.value)
       && (!nodes.ruleFilter.value || found.rule_id === nodes.ruleFilter.value)
       && (!nodes.fixableFilter.value || found.can_auto_fix === (nodes.fixableFilter.value === "yes"))

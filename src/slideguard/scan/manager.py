@@ -119,6 +119,18 @@ class ScanManager:
             self._cancellation = None
         self._publish()
 
+    def reset(self) -> None:
+        with self._lock:
+            if self._state is ManagerState.RUNNING:
+                raise RuntimeError("扫描正在执行，不能清空结果")
+            self._scan_id = None
+            self._state = ManagerState.IDLE
+            self._progress = None
+            self._result = None
+            self._error = None
+            self._cancellation = None
+        self._publish()
+
     def subscribe(self, listener: Listener) -> Callable[[], None]:
         with self._lock:
             self._listeners.add(listener)

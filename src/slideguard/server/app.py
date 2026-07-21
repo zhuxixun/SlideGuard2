@@ -226,6 +226,11 @@ def create_app(
 
         @app.post("/api/dialog/open-pptx")
         async def open_pptx_dialog() -> dict[str, object]:
+            if scan_manager is not None and scan_manager.snapshot().state.value == "running":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "scan_running", "message": "扫描正在执行，请先取消或等待完成"},
+                )
             selected = await native_dialog.open_pptx()
             if selected is None:
                 return {"cancelled": True, "file": None}
@@ -237,6 +242,8 @@ def create_app(
                     detail={"code": exc.code, "message": str(exc)},
                 ) from exc
             session_store.replace(imported)
+            if scan_manager is not None:
+                scan_manager.reset()
             return {
                 "cancelled": False,
                 "file": {

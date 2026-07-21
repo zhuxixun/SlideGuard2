@@ -8,6 +8,7 @@ from slideguard.server.lifecycle import LifecycleController
 from slideguard.application.session import SessionStore
 from slideguard.pptx.importer import inspect_pptx
 from slideguard.scan.manager import ScanManager
+from slideguard.scan.models import ScanMode, ScanRequest
 from pptx import Presentation
 
 
@@ -219,6 +220,51 @@ def test_scan_api_rejects_empty_custom_selection(tmp_path: Path) -> None:
         json={"mode": "custom", "selected_rules": []},
     )
     assert response.status_code == 409
+
+
+def test_opening_another_file_clears_stale_scan_result(tmp_path: Path) -> None:
+    first = tmp_path / "first.pptx"
+    second = tmp_path / "second.pptx"
+    for path in (first, second):
+        document = Presentation()
+        document.slides.add_slide(document.slide_layouts[6])
+        document.save(path)
+
+    from slideguard.server.native_dialog import NativeDialogService
+
+    class DialogBackend:
+        def open_pptx(self) -> str:
+            return str(second)
+
+        def save_report(self, default_name: str, extension: str) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    sessions = SessionStore()
+    manager = ScanManager()
+    dialogs = NativeDialogService(DialogBackend)
+    sessions.replace(inspect_pptx(first))
+    manager.start(sessions.current().presentation, ScanRequest(ScanMode.QUICK))
+    import time
+    deadline = time.monotonic() + 5
+    while manager.snapshot().state.value == "running" and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert manager.snapshot().result is not None
+
+    with TestClient(
+        create_app(
+            token="secret",
+            session_store=sessions,
+            scan_manager=manager,
+            native_dialog=dialogs,
+        )
+    ) as client:
+        response = client.post("/api/dialog/open-pptx", headers=TOKEN_HEADERS)
+        assert response.status_code == 200
+        assert client.get("/api/scans/current", headers=TOKEN_HEADERS).json()["state"] == "idle"
+    assert sessions.current().presentation.path == second.resolve()
 
 
 def test_scan_continues_when_sensitive_lexicon_is_invalid(tmp_path: Path) -> None:
