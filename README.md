@@ -106,6 +106,8 @@ uv run pytest --basetemp=.test-tmp -p no:cacheprovider
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
+构建脚本会从当前 `PATH` 查找 `uv.exe`。运行构建前可通过 `uv --version` 确认 uv 已正确安装并可用。
+
 脚本使用 PyInstaller 生成目录式应用，并创建：
 
 ```text

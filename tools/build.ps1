@@ -2,10 +2,16 @@ param()
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$uv = Join-Path $env:APPDATA "Python\Python313\Scripts\uv.exe"
-
-if (-not (Test-Path -LiteralPath $uv)) {
-    throw "uv.exe was not found"
+$uvCommand = Get-Command uv -ErrorAction SilentlyContinue
+if ($null -ne $uvCommand) {
+    $uv = $uvCommand.Source
+}
+else {
+    $legacyUv = Join-Path $env:APPDATA "Python\Python313\Scripts\uv.exe"
+    if (-not (Test-Path -LiteralPath $legacyUv)) {
+        throw "uv.exe was not found. Install uv and make sure the 'uv' command is available in PATH."
+    }
+    $uv = $legacyUv
 }
 
 Push-Location $projectRoot
