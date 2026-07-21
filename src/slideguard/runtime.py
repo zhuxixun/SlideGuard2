@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import tkinter
 
 from jinja2 import Environment
 from lxml import etree
@@ -39,3 +40,4 @@ def validate_runtime() -> None:
     Presentation()
     Workbook()
     Environment(autoescape=True).from_string("{{ value }}").render(value="ok")
+    tkinter.Tcl().eval("info patchlevel")

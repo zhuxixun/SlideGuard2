@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import (
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 
 from slideguard.lexicon import LexiconError, LexiconStore
 from slideguard.server.lifecycle import LifecycleController
+from slideguard.server.native_dialog import NativeDialogService
 
 
 class LexiconResponse(BaseModel):
@@ -40,12 +42,22 @@ def create_app(
     allowed_origin: str | None = None,
     frontend_dir: Path | None = None,
     lifecycle: LifecycleController | None = None,
+    native_dialog: NativeDialogService | None = None,
 ) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
+        try:
+            yield
+        finally:
+            if native_dialog is not None:
+                native_dialog.close()
+
     app = FastAPI(
         title="SlideGuard local service",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
     @app.middleware("http")
@@ -74,6 +86,16 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    if native_dialog is not None:
+
+        @app.post("/api/dialog/open-pptx")
+        async def open_pptx_dialog() -> dict[str, str | bool | None]:
+            selected = await native_dialog.open_pptx()
+            return {
+                "cancelled": selected is None,
+                "path": str(selected) if selected is not None else None,
+            }
 
     if lifecycle is not None:
 

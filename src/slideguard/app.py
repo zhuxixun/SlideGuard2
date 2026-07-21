@@ -14,6 +14,7 @@ from slideguard.lexicon import LexiconStore
 from slideguard.runtime import application_root, frontend_root
 from slideguard.server.app import create_app
 from slideguard.server.lifecycle import LifecycleController
+from slideguard.server.native_dialog import NativeDialogService
 
 
 def run() -> None:
@@ -23,6 +24,7 @@ def run() -> None:
     origin = f"http://127.0.0.1:{port}"
     data_root = application_root() / "data"
     lifecycle = LifecycleController(idle_seconds=15)
+    native_dialog = NativeDialogService()
     app = create_app(
         token=token,
         lexicon_store=LexiconStore(data_root / "config" / "sensitive-terms.txt"),
@@ -30,6 +32,7 @@ def run() -> None:
         allowed_origin=origin,
         frontend_dir=frontend_root(),
         lifecycle=lifecycle,
+        native_dialog=native_dialog,
     )
     config = uvicorn.Config(
         app,
