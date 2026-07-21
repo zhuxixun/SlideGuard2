@@ -12,6 +12,7 @@ import uvicorn
 
 from slideguard.lexicon import LexiconStore
 from slideguard.server.app import create_app
+from slideguard.server.lifecycle import LifecycleController
 
 
 def run() -> None:
@@ -20,12 +21,14 @@ def run() -> None:
     port = listener.getsockname()[1]
     origin = f"http://127.0.0.1:{port}"
     data_root = Path.cwd() / "data"
+    lifecycle = LifecycleController(idle_seconds=15)
     app = create_app(
         token=token,
         lexicon_store=LexiconStore(data_root / "config" / "sensitive-terms.txt"),
         expected_host=f"127.0.0.1:{port}",
         allowed_origin=origin,
         frontend_dir=Path(__file__).parent / "frontend",
+        lifecycle=lifecycle,
     )
     config = uvicorn.Config(
         app,
@@ -35,6 +38,7 @@ def run() -> None:
         log_level="warning",
     )
     server = uvicorn.Server(config)
+    lifecycle.set_shutdown_callback(lambda: setattr(server, "should_exit", True))
     url = f"{origin}/#token={token}"
     threading.Thread(
         target=_open_when_ready,
@@ -78,4 +82,3 @@ def _open_edge_app(url: str) -> bool:
             )
             return True
     return False
-

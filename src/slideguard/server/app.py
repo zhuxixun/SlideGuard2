@@ -3,12 +3,21 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from slideguard.lexicon import LexiconError, LexiconStore
+from slideguard.server.lifecycle import LifecycleController
 
 
 class LexiconResponse(BaseModel):
@@ -30,6 +39,7 @@ def create_app(
     expected_host: str = "testserver",
     allowed_origin: str | None = None,
     frontend_dir: Path | None = None,
+    lifecycle: LifecycleController | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="SlideGuard local service",
@@ -64,6 +74,35 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    if lifecycle is not None:
+
+        @app.post("/api/exit", status_code=status.HTTP_202_ACCEPTED)
+        async def exit_application(background_tasks: BackgroundTasks) -> dict[str, str]:
+            background_tasks.add_task(lifecycle.request_shutdown)
+            return {"status": "shutting_down"}
+
+        @app.websocket("/ws")
+        async def websocket_session(websocket: WebSocket) -> None:
+            if not _valid_websocket_request(
+                websocket,
+                token=token,
+                expected_host=expected_host,
+                allowed_origin=allowed_origin,
+            ):
+                await websocket.close(code=1008)
+                return
+            await websocket.accept(subprotocol="slideguard")
+            await lifecycle.connected()
+            try:
+                while True:
+                    message = await websocket.receive_text()
+                    if message == "ping":
+                        await websocket.send_text("pong")
+            except WebSocketDisconnect:
+                pass
+            finally:
+                await lifecycle.disconnected()
 
     if frontend_dir is not None:
 
@@ -131,4 +170,25 @@ def _error(http_status: int, code: str, message: str) -> JSONResponse:
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
+    )
+
+
+def _valid_websocket_request(
+    websocket: WebSocket,
+    *,
+    token: str,
+    expected_host: str,
+    allowed_origin: str | None,
+) -> bool:
+    if websocket.headers.get("host") != expected_host:
+        return False
+    origin = websocket.headers.get("origin")
+    if origin is not None and (allowed_origin is None or origin != allowed_origin):
+        return False
+    offered = {
+        item.strip()
+        for item in websocket.headers.get("sec-websocket-protocol", "").split(",")
+    }
+    return "slideguard" in offered and any(
+        secrets.compare_digest(item, token) for item in offered
     )

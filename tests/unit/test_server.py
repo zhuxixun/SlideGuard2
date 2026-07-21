@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from slideguard.lexicon import LexiconStore
 from slideguard.server.app import create_app
+from slideguard.server.lifecycle import LifecycleController
 
 
 TOKEN_HEADERS = {"X-SlideGuard-Token": "secret"}
@@ -85,3 +86,42 @@ def test_lexicon_api_rejects_stale_update(tmp_path: Path) -> None:
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "lexicon_conflict"
 
+
+def test_websocket_requires_token_protocol_and_tracks_connection() -> None:
+    lifecycle = LifecycleController(idle_seconds=60)
+    client = TestClient(
+        create_app(
+            token="secret",
+            lifecycle=lifecycle,
+            allowed_origin="http://testserver",
+        )
+    )
+
+    with client.websocket_connect(
+        "/ws",
+        subprotocols=["slideguard", "secret"],
+        headers={"Origin": "http://testserver"},
+    ) as websocket:
+        assert websocket.accepted_subprotocol == "slideguard"
+        assert lifecycle.connected_clients == 1
+        websocket.send_text("ping")
+        assert websocket.receive_text() == "pong"
+
+    assert lifecycle.connected_clients == 0
+
+
+def test_exit_endpoint_requests_shutdown() -> None:
+    events: list[str] = []
+    lifecycle = LifecycleController(idle_seconds=60)
+    lifecycle.set_shutdown_callback(lambda: events.append("shutdown"))
+    client = TestClient(create_app(token="secret", lifecycle=lifecycle))
+
+    response = client.post("/api/exit", headers=TOKEN_HEADERS)
+
+    assert response.status_code == 202
+    import time
+
+    deadline = time.monotonic() + 0.5
+    while not events and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert events == ["shutdown"]
