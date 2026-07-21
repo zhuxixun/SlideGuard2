@@ -65,6 +65,10 @@ class IssueStatusUpdate(BaseModel):
     status: Literal["pending", "ignored"]
 
 
+class RepairExecute(BaseModel):
+    operation_indexes: list[int] | None = None
+
+
 def create_app(
     *,
     token: str,
@@ -406,6 +410,7 @@ def create_app(
                                     "property_name": operation.property_name,
                                     "original_value": operation.original_value,
                                     "target_value": operation.target_value,
+                                    "issue_ids": operation.issue_ids,
                                 }
                                 for operation in plan.operations
                             ],
@@ -413,7 +418,7 @@ def create_app(
                     }
 
                 @app.post("/api/repairs/execute")
-                async def execute_repair() -> dict[str, object]:
+                async def execute_repair(request: RepairExecute | None = None) -> dict[str, object]:
                     terms: tuple[str, ...] = ()
                     if lexicon_store is not None:
                         try:
@@ -427,6 +432,11 @@ def create_app(
                         repaired = await asyncio.to_thread(
                             repair_manager.execute,
                             sensitive_terms=terms,
+                            operation_indexes=(
+                                tuple(request.operation_indexes)
+                                if request is not None and request.operation_indexes is not None
+                                else None
+                            ),
                         )
                     except (FixPlanError, RuntimeError, OSError) as exc:
                         raise HTTPException(

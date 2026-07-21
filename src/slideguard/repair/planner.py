@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 
@@ -111,3 +112,22 @@ def validate_plan_source(plan: FixPlan) -> None:
         raise FixPlanError("原文件在扫描后发生变化，请重新扫描")
     if plan.destination.exists():
         raise FixPlanError("目标文件已存在，不允许覆盖")
+
+
+def select_fix_operations(plan: FixPlan, indexes: tuple[int, ...]) -> FixPlan:
+    selected_indexes = tuple(dict.fromkeys(indexes))
+    if not selected_indexes:
+        raise FixPlanError("至少保留一个修复项")
+    if any(index < 0 or index >= len(plan.operations) for index in selected_indexes):
+        raise FixPlanError("修复项不属于当前修复计划")
+    operations = tuple(plan.operations[index] for index in selected_indexes)
+    issue_ids = tuple(dict.fromkeys(
+        issue_id for operation in operations for issue_id in operation.issue_ids
+    ))
+    selected = frozenset(issue_ids)
+    return replace(
+        plan,
+        operations=operations,
+        issue_ids=issue_ids,
+        selected_facts=tuple(item for item in plan.selected_facts if item[0] in selected),
+    )

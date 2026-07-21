@@ -5,7 +5,7 @@ import pytest
 from pptx import Presentation
 
 from slideguard.pptx.importer import inspect_pptx
-from slideguard.repair.planner import FixPlanError, build_fix_plan, validate_plan_source
+from slideguard.repair.planner import FixPlanError, build_fix_plan, select_fix_operations, validate_plan_source
 from slideguard.rules.factory import issue
 from slideguard.rules.models import IssueStatus, Severity
 from slideguard.scan.models import ScanMode, ScanRequest
@@ -94,3 +94,21 @@ def test_fix_plan_rejects_ignored_issue(tmp_path: Path) -> None:
     result = replace(result, issues=(ignored, *result.issues[1:]))
     with pytest.raises(FixPlanError, match="不是待处理状态"):
         build_fix_plan(result, (ignored.issue_id,), tmp_path / "fixed.pptx")
+
+
+def test_fix_plan_can_keep_only_confirmed_operations(tmp_path: Path) -> None:
+    result = _result(tmp_path)
+    plan = build_fix_plan(
+        result,
+        tuple(found.issue_id for found in result.issues),
+        tmp_path / "fixed.pptx",
+    )
+    reduced = select_fix_operations(plan, (0, 2))
+    assert [operation.property_name for operation in reduced.operations] == [
+        "replace_font", "set_title_style"
+    ]
+    assert set(reduced.issue_ids) == {
+        issue_id for operation in reduced.operations for issue_id in operation.issue_ids
+    }
+    with pytest.raises(FixPlanError, match="至少保留"):
+        select_fix_operations(plan, ())

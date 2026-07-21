@@ -6,7 +6,7 @@ from threading import RLock
 
 from slideguard.repair.executor import RepairResult, execute_and_recheck
 from slideguard.repair.models import FixPlan
-from slideguard.repair.planner import build_fix_plan
+from slideguard.repair.planner import build_fix_plan, select_fix_operations
 from slideguard.scan.models import ScanResult
 
 
@@ -38,13 +38,20 @@ class RepairManager:
             self._result = None
         return plan
 
-    def execute(self, *, sensitive_terms: tuple[str, ...]) -> RepairResult:
+    def execute(
+        self,
+        *,
+        sensitive_terms: tuple[str, ...],
+        operation_indexes: tuple[int, ...] | None = None,
+    ) -> RepairResult:
         with self._lock:
             if self._executing:
                 raise RuntimeError("修复正在执行")
             if self._plan is None:
                 raise RuntimeError("没有待确认的修复计划")
             plan = self._plan
+            if operation_indexes is not None:
+                plan = select_fix_operations(plan, operation_indexes)
             self._executing = True
         try:
             result = execute_and_recheck(plan, sensitive_terms=sensitive_terms)

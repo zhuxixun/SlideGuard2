@@ -555,14 +555,27 @@ async function prepareRepair(issueIds) {
   nodes.repairSummary.textContent = `共 ${plan.issue_count} 个问题，涉及 ${plan.page_count} 页、${plan.object_count} 个对象。`;
   nodes.repairPath.textContent = `输出路径：${plan.destination}`;
   nodes.repairOperations.replaceChildren();
-  plan.operations.forEach((operation) => {
-    const item = document.createElement("p");
-    item.textContent = `${operation.property_name}：${operation.original_value} → ${operation.target_value}`;
+  plan.operations.forEach((operation, index) => {
+    const item = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.dataset.operationIndex = String(index);
+    const description = document.createElement("span");
+    const pages = [...new Set(
+      scanIssues.filter((found) => operation.issue_ids.includes(found.issue_id)).map((found) => found.slide_index),
+    )].sort((a, b) => a - b);
+    description.textContent = `第 ${pages.join("、")} 页 · 对象 ${operation.object_key} · ${operation.property_name}：${operation.original_value} → ${operation.target_value}`;
+    checkbox.addEventListener("change", updateRepairConfirmation);
+    item.append(checkbox, description);
     nodes.repairOperations.append(item);
   });
   nodes.repairStatus.textContent = "";
   nodes.confirmRepair.disabled = false;
   nodes.repairDialog.showModal();
+}
+function updateRepairConfirmation() {
+  nodes.confirmRepair.disabled = !nodes.repairOperations.querySelector("input:checked");
 }
 nodes.closeRepair.addEventListener("click", async () => {
   await apiFetch("/api/repairs/prepare", { method: "DELETE" });
@@ -573,7 +586,12 @@ nodes.confirmRepair.addEventListener("click", async () => {
   nodes.closeRepair.disabled = true;
   nodes.repairStatus.textContent = "正在修复并执行标准复检…";
   try {
-    const response = await apiFetch("/api/repairs/execute", { method: "POST" });
+    const operationIndexes = [...nodes.repairOperations.querySelectorAll("input:checked")]
+      .map((checkbox) => Number(checkbox.dataset.operationIndex));
+    const response = await apiFetch("/api/repairs/execute", {
+      method: "POST",
+      body: JSON.stringify({ operation_indexes: operationIndexes }),
+    });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail?.message || "自动修复失败");
     nodes.repairStatus.textContent = `修复完成：已修复 ${data.fixed_count}，未修复 ${data.unresolved_count}，新增问题 ${data.introduced_count}。文件：${data.destination}`;
