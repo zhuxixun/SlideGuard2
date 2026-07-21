@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from secrets import token_hex
 from threading import RLock, Thread
@@ -8,6 +8,7 @@ from typing import Callable
 
 from slideguard.pptx.importer import ImportedPresentation
 from slideguard.scan.models import ScanProgress, ScanRequest, ScanResult
+from slideguard.rules.models import IssueStatus
 from slideguard.scan.orchestrator import CancellationToken, run_scan, select_rules
 
 
@@ -86,6 +87,21 @@ class ScanManager:
                 self._result,
                 self._error,
             )
+
+    def set_issue_status(self, issue_id: str, status: IssueStatus) -> bool:
+        with self._lock:
+            if self._result is None:
+                raise RuntimeError("当前没有可更新的扫描结果")
+            found = next((item for item in self._result.issues if item.issue_id == issue_id), None)
+            if found is None:
+                return False
+            issues = tuple(
+                replace(item, status=status) if item.issue_id == issue_id else item
+                for item in self._result.issues
+            )
+            self._result = replace(self._result, issues=issues)
+        self._publish()
+        return True
 
     def subscribe(self, listener: Listener) -> Callable[[], None]:
         with self._lock:

@@ -265,7 +265,7 @@ function renderScanState(state) {
       nodes.scanProgress.textContent = state.result.complete ? "检查完成" : "扫描未完成";
       nodes.scanResult.textContent = `共发现 ${state.result.issues.length} 个问题：S1 ${counts.S1}，S2 ${counts.S2}，S3 ${counts.S3}，S4 ${counts.S4}`;
       nodes.scanResult.hidden = false;
-      scanIssues = state.result.issues.map((found) => ({ ...found, status: "pending" }));
+      scanIssues = state.result.issues.map((found) => ({ ...found }));
       lastScanResult = state.result;
       selectedIssueIds.clear();
       nodes.repairSelected.hidden = true;
@@ -310,12 +310,26 @@ async function exportReport(format) {
   .forEach((control) => control.addEventListener("input", applyIssueFilters));
 nodes.previousIssue.addEventListener("click", () => showIssue(Math.max(0, activeIssueIndex - 1)));
 nodes.nextIssue.addEventListener("click", () => showIssue(Math.min(filteredIssues.length - 1, activeIssueIndex + 1)));
-nodes.ignoreIssue.addEventListener("click", () => {
+nodes.ignoreIssue.addEventListener("click", async () => {
   if (activeIssueIndex < 0) return;
   const found = filteredIssues[activeIssueIndex];
-  found.status = found.status === "ignored" ? "pending" : "ignored";
-  nodes.ignoreIssue.textContent = found.status === "ignored" ? "取消忽略" : "忽略";
-  renderIssueList();
+  const nextStatus = found.status === "ignored" ? "pending" : "ignored";
+  nodes.ignoreIssue.disabled = true;
+  try {
+    const response = await apiFetch(`/api/scans/current/issues/${encodeURIComponent(found.issue_id)}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status: nextStatus }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail?.message || "更新问题状态失败");
+    found.status = data.status;
+    nodes.ignoreIssue.textContent = found.status === "ignored" ? "取消忽略" : "忽略";
+    renderIssueList();
+  } catch (error) {
+    nodes.scanProgress.textContent = error.message;
+  } finally {
+    nodes.ignoreIssue.disabled = false;
+  }
 });
 
 function prepareRuleFilter() {

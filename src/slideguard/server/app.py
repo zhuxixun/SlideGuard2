@@ -25,6 +25,7 @@ from slideguard.server.lifecycle import LifecycleController
 from slideguard.server.native_dialog import NativeDialogService
 from slideguard.scan.manager import ScanManager, ScanManagerSnapshot
 from slideguard.scan.models import ScanMode, ScanRequest
+from slideguard.rules.models import IssueStatus
 from slideguard.preview.svg_builder import PreviewGuide, PreviewObject, build_svg
 import re
 from typing import Literal
@@ -57,6 +58,10 @@ class ReportExport(BaseModel):
 
 class RepairPrepare(BaseModel):
     issue_ids: list[str] = Field(default_factory=list)
+
+
+class IssueStatusUpdate(BaseModel):
+    status: Literal["pending", "ignored"]
 
 
 def create_app(
@@ -157,6 +162,22 @@ def create_app(
         @app.post("/api/scans/current/cancel", status_code=status.HTTP_202_ACCEPTED)
         def cancel_scan() -> dict[str, object]:
             return {"accepted": scan_manager.cancel()}
+
+        @app.put("/api/scans/current/issues/{issue_id}/status")
+        def update_issue_status(issue_id: str, request: IssueStatusUpdate) -> dict[str, str]:
+            try:
+                updated = scan_manager.set_issue_status(issue_id, IssueStatus(request.status))
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "no_scan_result", "message": str(exc)},
+                ) from exc
+            if not updated:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"code": "issue_not_found", "message": "问题不存在"},
+                )
+            return {"issue_id": issue_id, "status": request.status}
 
         @app.get("/api/scans/current/slides/{slide_index}/preview")
         def slide_preview(slide_index: int, issue_id: str | None = None) -> Response:

@@ -185,6 +185,23 @@ def test_scan_api_requires_presentation_and_returns_completed_result(tmp_path: P
     assert preview.headers["content-type"].startswith("image/svg+xml")
     assert 'data-page-highlight="true"' in preview.text
 
+    ignored = client.put(
+        f"/api/scans/current/issues/{issue_id}/status",
+        headers=TOKEN_HEADERS,
+        json={"status": "ignored"},
+    )
+    assert ignored.status_code == 200
+    assert ignored.json() == {"issue_id": issue_id, "status": "ignored"}
+    refreshed = client.get("/api/scans/current", headers=TOKEN_HEADERS).json()
+    assert refreshed["result"]["issues"][0]["status"] == "ignored"
+
+    restored = client.put(
+        f"/api/scans/current/issues/{issue_id}/status",
+        headers=TOKEN_HEADERS,
+        json={"status": "pending"},
+    )
+    assert restored.status_code == 200
+
 
 def test_scan_api_rejects_empty_custom_selection(tmp_path: Path) -> None:
     path = tmp_path / "custom.pptx"
