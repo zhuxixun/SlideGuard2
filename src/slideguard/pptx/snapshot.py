@@ -136,7 +136,11 @@ def build_snapshot(imported: ImportedPresentation) -> PresentationSnapshot:
             )
         )
 
-    occurrences = tuple(_text_occurrence(item) for item in probe_text(imported.path))
+    occurrences = tuple(
+        occurrence
+        for item in probe_text(imported.path)
+        for occurrence in _text_occurrences(item)
+    )
     return PresentationSnapshot(
         file_identity=FileIdentity(imported.path, imported.size_bytes, imported.digest),
         slide_width_pt=document.slide_width / EMU_PER_POINT,
@@ -200,20 +204,23 @@ def _text_frame(shape) -> TextFrameSnapshot:  # type: ignore[no-untyped-def]
     return TextFrameSnapshot(text=shape.text, paragraphs=paragraphs)
 
 
-def _text_occurrence(item) -> TextOccurrence:  # type: ignore[no-untyped-def]
-    slide_index = item.slide_indices[0] if item.slide_indices else 0
+def _text_occurrences(item) -> tuple[TextOccurrence, ...]:  # type: ignore[no-untyped-def]
     key = f"{item.part_uri}:{item.source}:{item.xml_path}"
     locations = tuple(
         CharacterLocation(item.part_uri, item.xml_path, offset)
         for offset in range(len(item.text))
     )
-    return TextOccurrence(
-        key=key,
-        slide_index=slide_index,
-        source=TextSource(item.source),
-        text=item.text,
-        visible=True,
-        character_map=locations,
+    slide_indices = item.slide_indices or (0,)
+    return tuple(
+        TextOccurrence(
+            key=key,
+            slide_index=slide_index,
+            source=TextSource(item.source),
+            text=item.text,
+            visible=True,
+            character_map=locations,
+        )
+        for slide_index in slide_indices
     )
 
 
