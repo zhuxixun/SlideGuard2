@@ -36,6 +36,8 @@ class ScanProgress:
     current_rule: str | None = None
     completed_rule_ids: tuple[str, ...] = ()
     severity_counts: tuple[int, int, int, int] = (0, 0, 0, 0)
+    current_page: int | None = None
+    total_pages: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

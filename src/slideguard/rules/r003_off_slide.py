@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections.abc import Callable
 
 from math import cos, radians, sin
 
@@ -10,10 +11,11 @@ from slideguard.rules.models import Issue, Severity
 RULE_ID = "R003"
 
 
-def check_off_slide_objects(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
+def check_off_slide_objects(snapshot: PresentationSnapshot, on_page: Callable[[int, int], None] | None = None) -> tuple[Issue, ...]:
     canvas = Rect(0, 0, snapshot.slide_width_pt, snapshot.slide_height_pt)
     issues: list[Issue] = []
-    for slide in snapshot.slides:
+    total = len(snapshot.slides)
+    for position, slide in enumerate(snapshot.slides, 1):
         for obj in slide.objects:
             bounds = _rotated_bounds(obj.bounds_pt, obj.rotation)
             if not obj.visible or _intersects(bounds, canvas):
@@ -34,6 +36,8 @@ def check_off_slide_objects(snapshot: PresentationSnapshot) -> tuple[Issue, ...]
                     suggestion="请人工确认该对象是否为残留内容，并删除或调整位置。",
                 )
             )
+        if on_page is not None:
+            on_page(position, total)
     return tuple(issues)
 
 

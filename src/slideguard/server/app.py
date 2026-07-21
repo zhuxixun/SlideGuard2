@@ -593,6 +593,8 @@ def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
                 level: snapshot.progress.severity_counts[index]
                 for index, level in enumerate(("S1", "S2", "S3", "S4"))
             },
+            "current_page": snapshot.progress.current_page,
+            "total_pages": snapshot.progress.total_pages,
         }
     if snapshot.result is not None:
         result = snapshot.result

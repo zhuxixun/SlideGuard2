@@ -58,7 +58,19 @@ def run_scan(
     cancellation = cancellation or CancellationToken()
     progress = on_progress or (lambda _: None)
     selected = select_rules(request)
-    registry = dict(rules or _default_rules())
+    issues: list[Issue] = []
+    completed: list[str] = []
+    failures: list[RuleFailure] = []
+
+    def page_progress(rule_id: str, current_page: int, total_pages: int) -> None:
+        progress(
+            _checking_progress(
+                completed, selected, issues, rule_id,
+                current_page=current_page, total_pages=total_pages,
+            )
+        )
+
+    registry = dict(rules or _default_rules(page_progress))
     unavailable_rules = dict(unavailable_rules or {})
     missing = tuple(rule_id for rule_id in selected if rule_id not in registry)
     if missing:
@@ -69,9 +81,6 @@ def run_scan(
     snapshot = snapshot_builder(imported)
     progress(ScanProgress(ScanStage.PREVIEW, 0, len(selected)))
 
-    issues: list[Issue] = []
-    completed: list[str] = []
-    failures: list[RuleFailure] = []
     for rule_id in selected:
         if cancellation.cancelled:
             break
@@ -118,15 +127,15 @@ def select_rules(request: ScanRequest) -> tuple[str, ...]:
     )
 
 
-def _default_rules() -> Mapping[str, Rule]:
+def _default_rules(on_page: Callable[[str, int, int], None]) -> Mapping[str, Rule]:
     return {
-        "R002": lambda snapshot, _: check_blank_slides(snapshot),
-        "R003": lambda snapshot, _: check_off_slide_objects(snapshot),
-        "R004": lambda snapshot, _: check_fonts(snapshot),
+        "R002": lambda snapshot, _: check_blank_slides(snapshot, lambda page, total: on_page("R002", page, total)),
+        "R003": lambda snapshot, _: check_off_slide_objects(snapshot, lambda page, total: on_page("R003", page, total)),
+        "R004": lambda snapshot, _: check_fonts(snapshot, lambda page, total: on_page("R004", page, total)),
         "R005": lambda snapshot, _: check_font_sizes(snapshot),
-        "R006": lambda snapshot, _: check_text_overflow(snapshot),
+        "R006": lambda snapshot, _: check_text_overflow(snapshot, lambda page, total: on_page("R006", page, total)),
         "R007": lambda snapshot, _: check_alignment(snapshot),
-        "R008": lambda snapshot, _: check_text_margins(snapshot),
+        "R008": lambda snapshot, _: check_text_margins(snapshot, lambda page, total: on_page("R008", page, total)),
         "R009": lambda snapshot, _: check_titles(snapshot),
         "R010": lambda snapshot, terms: check_sensitive_text(snapshot, terms),
     }
@@ -153,6 +162,9 @@ def _checking_progress(
     selected: tuple[str, ...],
     issues: list[Issue],
     current_rule: str | None,
+    *,
+    current_page: int | None = None,
+    total_pages: int | None = None,
 ) -> ScanProgress:
     unique_issues = _deduplicate_and_sort(issues)
     counts = tuple(
@@ -166,4 +178,6 @@ def _checking_progress(
         current_rule,
         tuple(completed),
         counts,  # type: ignore[arg-type]
+        current_page,
+        total_pages,
     )

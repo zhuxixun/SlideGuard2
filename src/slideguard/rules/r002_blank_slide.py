@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections.abc import Callable
 
 from slideguard.pptx.snapshot import PresentationSnapshot, Rect, SlideObject
 from slideguard.rules.factory import issue
@@ -9,15 +10,14 @@ RULE_ID = "R002"
 AUXILIARY_PLACEHOLDERS = ("DATE", "FOOTER", "SLIDE_NUMBER")
 
 
-def check_blank_slides(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
+def check_blank_slides(snapshot: PresentationSnapshot, on_page: Callable[[int, int], None] | None = None) -> tuple[Issue, ...]:
     canvas = Rect(0, 0, snapshot.slide_width_pt, snapshot.slide_height_pt)
     issues: list[Issue] = []
-    for slide in snapshot.slides:
-        if slide.hidden or any(_is_subject(obj, canvas) for obj in slide.objects):
-            continue
-        fact_key = f"{RULE_ID}:{slide.slide_index}:subject-content"
-        issues.append(
-            issue(
+    total = len(snapshot.slides)
+    for position, slide in enumerate(snapshot.slides, 1):
+        if not slide.hidden and not any(_is_subject(obj, canvas) for obj in slide.objects):
+            fact_key = f"{RULE_ID}:{slide.slide_index}:subject-content"
+            issues.append(issue(
                 fact_key=fact_key,
                 rule_id=RULE_ID,
                 slide_index=slide.slide_index,
@@ -27,8 +27,9 @@ def check_blank_slides(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
                 expected_value="页面包含至少一个可见主体对象",
                 evidence="排除背景、页码、Logo、页脚、不可见及画布外对象后，主体对象数为 0。",
                 suggestion="请人工确认该页是否应删除或补充内容。",
-            )
-        )
+            ))
+        if on_page is not None:
+            on_page(position, total)
     return tuple(issues)
 
 

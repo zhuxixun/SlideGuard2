@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections.abc import Callable
 
 from slideguard.pptx.snapshot import PresentationSnapshot, Rect, SlideObject, TextFrameSnapshot
 from slideguard.preview.text_flow import measure_text_flow
@@ -12,9 +13,10 @@ TITLE_TYPES = ("TITLE", "CENTER_TITLE")
 AUXILIARY_TYPES = ("DATE", "FOOTER", "SLIDE_NUMBER")
 
 
-def check_text_overflow(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
+def check_text_overflow(snapshot: PresentationSnapshot, on_page: Callable[[int, int], None] | None = None) -> tuple[Issue, ...]:
     issues: list[Issue] = []
-    for slide in snapshot.slides:
+    total = len(snapshot.slides)
+    for position, slide in enumerate(snapshot.slides, 1):
         for obj in _walk(slide.objects):
             if obj.object_type == "table":
                 for cell in obj.table_cells:
@@ -32,6 +34,8 @@ def check_text_overflow(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
                 )
                 if found is not None:
                     issues.append(found)
+        if on_page is not None:
+            on_page(position, total)
     return tuple(issues)
 
 

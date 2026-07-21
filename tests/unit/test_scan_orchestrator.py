@@ -67,6 +67,25 @@ def test_standard_scan_runs_all_base_rules(tmp_path: Path) -> None:
     assert [rule_id for rule_id, _ in calls] == list(ALL_RULES)
 
 
+def test_single_page_rule_reports_real_page_progress(tmp_path: Path) -> None:
+    path = tmp_path / "pages.pptx"
+    document = Presentation()
+    document.slides.add_slide(document.slide_layouts[6])
+    document.slides.add_slide(document.slide_layouts[6])
+    document.save(path)
+    events = []
+
+    run_scan(
+        inspect_pptx(path),
+        ScanRequest(ScanMode.CUSTOM, selected_rules=("R002",)),
+        on_progress=events.append,
+    )
+
+    page_events = [event for event in events if event.current_page is not None]
+    assert [(event.current_page, event.total_pages) for event in page_events] == [(1, 2), (2, 2)]
+    assert all(event.current_rule == "R002" for event in page_events)
+
+
 def test_custom_scan_orders_and_deduplicates_selection(tmp_path: Path) -> None:
     calls = []
     result = run_scan(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Callable
 import unicodedata
 
 from slideguard.pptx.snapshot import PresentationSnapshot, SlideObject
@@ -20,9 +21,10 @@ class _BadSpan:
     font_name: str
 
 
-def check_fonts(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
+def check_fonts(snapshot: PresentationSnapshot, on_page: Callable[[int, int], None] | None = None) -> tuple[Issue, ...]:
     issues: list[Issue] = []
-    for slide in snapshot.slides:
+    total = len(snapshot.slides)
+    for position, slide in enumerate(snapshot.slides, 1):
         for obj in _walk(slide.objects):
             if obj.text_frame is None or not obj.text_frame.text:
                 continue
@@ -47,6 +49,8 @@ def check_fonts(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
                         fix_target=TARGET_FONT,
                     )
                 )
+        if on_page is not None:
+            on_page(position, total)
     return tuple(issues)
 
 

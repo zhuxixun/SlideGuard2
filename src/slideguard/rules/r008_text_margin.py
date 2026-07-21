@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections.abc import Callable
 
 from math import cos, radians, sin
 
@@ -13,13 +14,14 @@ SAFE_RATIO = 0.03
 AUXILIARY_TYPES = ("DATE", "FOOTER", "SLIDE_NUMBER")
 
 
-def check_text_margins(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
+def check_text_margins(snapshot: PresentationSnapshot, on_page: Callable[[int, int], None] | None = None) -> tuple[Issue, ...]:
     issues: list[Issue] = []
     safe_left = snapshot.slide_width_pt * SAFE_RATIO
     safe_top = snapshot.slide_height_pt * SAFE_RATIO
     safe_right = snapshot.slide_width_pt - safe_left
     safe_bottom = snapshot.slide_height_pt - safe_top
-    for slide in snapshot.slides:
+    total = len(snapshot.slides)
+    for position, slide in enumerate(snapshot.slides, 1):
         for obj in _walk(slide.objects):
             if _auxiliary(obj):
                 continue
@@ -54,6 +56,8 @@ def check_text_margins(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
                         suggestion="请人工调整文本位置或排版，使文字离开页面安全边距。",
                     )
                 )
+        if on_page is not None:
+            on_page(position, total)
     return tuple(issues)
 
 
