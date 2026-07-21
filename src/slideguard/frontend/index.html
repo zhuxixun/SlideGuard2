@@ -44,6 +44,32 @@
           敏感词库为空，本项未发现问题不代表无敏感内容。
         </p>
       </section>
+
+      <section class="card" aria-labelledby="scan-title">
+        <h2 id="scan-title">开始检查</h2>
+        <div class="scan-modes" role="radiogroup" aria-label="检查模式">
+          <label><input name="scan-mode" type="radio" value="quick" checked> 快速检查</label>
+          <label><input name="scan-mode" type="radio" value="standard"> 标准检查</label>
+          <label><input name="scan-mode" type="radio" value="custom"> 自定义检查</label>
+        </div>
+        <div id="custom-rules" class="rule-grid" hidden>
+          <label><input type="checkbox" value="R002" checked> R002 空白页面</label>
+          <label><input type="checkbox" value="R003" checked> R003 页面外元素</label>
+          <label><input type="checkbox" value="R004" checked> R004 字体一致性</label>
+          <label><input type="checkbox" value="R005" checked> R005 字号一致性</label>
+          <label><input type="checkbox" value="R006" checked> R006 文本溢出</label>
+          <label><input type="checkbox" value="R007" checked> R007 元素对齐</label>
+          <label><input type="checkbox" value="R008" checked> R008 文字安全边距</label>
+          <label><input type="checkbox" value="R009" checked> R009 标题一致性</label>
+          <label><input type="checkbox" value="R010" checked> R010 敏感及残留文本</label>
+        </div>
+        <div class="row scan-actions">
+          <button id="start-scan" type="button" disabled>开始检查</button>
+          <button id="cancel-scan" class="secondary" type="button" hidden>取消检查</button>
+          <span id="scan-progress" class="muted">请先打开 PPT 文件</span>
+        </div>
+        <div id="scan-result" hidden></div>
+      </section>
     </main>
 
     <dialog id="lexicon-dialog" aria-labelledby="dialog-title">

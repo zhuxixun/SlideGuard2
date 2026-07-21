@@ -16,13 +16,15 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from slideguard.lexicon import LexiconError, LexiconStore
 from slideguard.application.session import SessionStore
 from slideguard.pptx.importer import PptxImportError, inspect_pptx
 from slideguard.server.lifecycle import LifecycleController
 from slideguard.server.native_dialog import NativeDialogService
+from slideguard.scan.manager import ScanManager, ScanManagerSnapshot
+from slideguard.scan.models import ScanMode, ScanRequest
 
 
 class LexiconResponse(BaseModel):
@@ -37,6 +39,11 @@ class LexiconUpdate(BaseModel):
     expected_digest: str
 
 
+class ScanStart(BaseModel):
+    mode: ScanMode
+    selected_rules: list[str] = Field(default_factory=list)
+
+
 def create_app(
     *,
     token: str,
@@ -47,6 +54,7 @@ def create_app(
     lifecycle: LifecycleController | None = None,
     native_dialog: NativeDialogService | None = None,
     session_store: SessionStore | None = None,
+    scan_manager: ScanManager | None = None,
 ) -> FastAPI:
     session_store = session_store or SessionStore()
     @asynccontextmanager
@@ -92,6 +100,48 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    if scan_manager is not None:
+
+        @app.post("/api/scans", status_code=status.HTTP_202_ACCEPTED)
+        def start_scan(request: ScanStart) -> dict[str, str]:
+            current = session_store.current()
+            if current is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "no_presentation", "message": "请先打开 PPTX 文件"},
+                )
+            terms: tuple[str, ...] = ()
+            unavailable_rules: dict[str, str] = {}
+            if lexicon_store is not None:
+                try:
+                    terms = lexicon_store.load().terms
+                except LexiconError as exc:
+                    unavailable_rules["R010"] = str(exc)
+            try:
+                scan_id = scan_manager.start(
+                    current.presentation,
+                    ScanRequest(
+                        request.mode,
+                        selected_rules=tuple(request.selected_rules),
+                        sensitive_terms=terms,
+                    ),
+                    unavailable_rules=unavailable_rules,
+                )
+            except (RuntimeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "scan_not_started", "message": str(exc)},
+                ) from exc
+            return {"scan_id": scan_id, "status": "running"}
+
+        @app.get("/api/scans/current")
+        def current_scan() -> dict[str, object]:
+            return _scan_snapshot_response(scan_manager.snapshot())
+
+        @app.post("/api/scans/current/cancel", status_code=status.HTTP_202_ACCEPTED)
+        def cancel_scan() -> dict[str, object]:
+            return {"accepted": scan_manager.cancel()}
+
     if native_dialog is not None:
 
         @app.post("/api/dialog/open-pptx")
@@ -136,14 +186,38 @@ def create_app(
                 return
             await websocket.accept(subprotocol="slideguard")
             await lifecycle.connected()
+            queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=100)
+            unsubscribe = None
+            if scan_manager is not None:
+                loop = asyncio.get_running_loop()
+
+                def listener(snapshot: ScanManagerSnapshot) -> None:
+                    def enqueue() -> None:
+                        if queue.full():
+                            queue.get_nowait()
+                        queue.put_nowait({"type": "scan", "payload": _scan_snapshot_response(snapshot)})
+                    loop.call_soon_threadsafe(enqueue)
+
+                unsubscribe = scan_manager.subscribe(listener)
             try:
                 while True:
-                    message = await websocket.receive_text()
-                    if message == "ping":
-                        await websocket.send_text("pong")
+                    receive = asyncio.create_task(websocket.receive_text())
+                    event = asyncio.create_task(queue.get()) if scan_manager is not None else None
+                    tasks = {receive} | ({event} if event is not None else set())
+                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                    for task in pending:
+                        task.cancel()
+                    if receive in done:
+                        message = receive.result()
+                        if message == "ping":
+                            await websocket.send_text("pong")
+                    elif event is not None and event in done:
+                        await websocket.send_json(event.result())
             except WebSocketDisconnect:
                 pass
             finally:
+                if unsubscribe is not None:
+                    unsubscribe()
                 await lifecycle.disconnected()
 
     if frontend_dir is not None:
@@ -217,6 +291,54 @@ def _error(http_status: int, code: str, message: str) -> JSONResponse:
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
+    response: dict[str, object] = {
+        "scan_id": snapshot.scan_id,
+        "state": snapshot.state.value,
+        "error": snapshot.error,
+        "progress": None,
+        "result": None,
+    }
+    if snapshot.progress is not None:
+        response["progress"] = {
+            "stage": snapshot.progress.stage.value,
+            "completed_rules": snapshot.progress.completed_rules,
+            "total_rules": snapshot.progress.total_rules,
+            "current_rule": snapshot.progress.current_rule,
+        }
+    if snapshot.result is not None:
+        result = snapshot.result
+        response["result"] = {
+            "mode": result.mode.value,
+            "rule_set_version": result.rule_set_version,
+            "requested_rules": result.requested_rules,
+            "completed_rules": result.completed_rules,
+            "complete": result.complete,
+            "cancelled": result.cancelled,
+            "failures": [
+                {"rule_id": failure.rule_id, "message": failure.message}
+                for failure in result.failures
+            ],
+            "issues": [
+                {
+                    "issue_id": found.issue_id,
+                    "rule_id": found.rule_id,
+                    "slide_index": found.slide_index,
+                    "severity": found.severity.value,
+                    "actual_value": found.actual_value,
+                    "expected_value": found.expected_value,
+                    "evidence": found.evidence,
+                    "suggestion": found.suggestion,
+                    "can_auto_fix": found.can_auto_fix,
+                }
+                for found in result.issues
+            ],
+            "started_at": result.started_at.isoformat(),
+            "finished_at": result.finished_at.isoformat(),
+        }
+    return response
 
 
 def _valid_websocket_request(

@@ -5,6 +5,10 @@ from fastapi.testclient import TestClient
 from slideguard.lexicon import LexiconStore
 from slideguard.server.app import create_app
 from slideguard.server.lifecycle import LifecycleController
+from slideguard.application.session import SessionStore
+from slideguard.pptx.importer import inspect_pptx
+from slideguard.scan.manager import ScanManager
+from pptx import Presentation
 
 
 TOKEN_HEADERS = {"X-SlideGuard-Token": "secret"}
@@ -125,3 +129,101 @@ def test_exit_endpoint_requests_shutdown() -> None:
     while not events and time.monotonic() < deadline:
         time.sleep(0.01)
     assert events == ["shutdown"]
+
+
+def test_scan_api_requires_presentation_and_returns_completed_result(tmp_path: Path) -> None:
+    manager = ScanManager()
+    sessions = SessionStore()
+    lexicon_path = tmp_path / "terms.txt"
+    lexicon_path.write_text("Secret\n", encoding="utf-8")
+    client = TestClient(
+        create_app(
+            token="secret",
+            session_store=sessions,
+            scan_manager=manager,
+            lexicon_store=LexiconStore(lexicon_path),
+        )
+    )
+    missing = client.post(
+        "/api/scans",
+        headers=TOKEN_HEADERS,
+        json={"mode": "quick"},
+    )
+    assert missing.status_code == 409
+
+    pptx_path = tmp_path / "scan.pptx"
+    document = Presentation()
+    document.slides.add_slide(document.slide_layouts[6])
+    document.save(pptx_path)
+    sessions.replace(inspect_pptx(pptx_path))
+    started = client.post(
+        "/api/scans",
+        headers=TOKEN_HEADERS,
+        json={"mode": "quick"},
+    )
+    assert started.status_code == 202
+
+    import time
+    deadline = time.monotonic() + 5
+    payload = {}
+    while time.monotonic() < deadline:
+        payload = client.get("/api/scans/current", headers=TOKEN_HEADERS).json()
+        if payload["state"] != "running":
+            break
+        time.sleep(0.01)
+    assert payload["state"] == "completed"
+    assert payload["result"]["requested_rules"] == list(
+        ("R002", "R003", "R004", "R006", "R009", "R010")
+    )
+    assert payload["result"]["rule_set_version"] == "builtin-rules-v1.0"
+
+
+def test_scan_api_rejects_empty_custom_selection(tmp_path: Path) -> None:
+    path = tmp_path / "custom.pptx"
+    document = Presentation()
+    document.slides.add_slide(document.slide_layouts[6])
+    document.save(path)
+    sessions = SessionStore()
+    sessions.replace(inspect_pptx(path))
+    client = TestClient(
+        create_app(token="secret", session_store=sessions, scan_manager=ScanManager())
+    )
+    response = client.post(
+        "/api/scans",
+        headers=TOKEN_HEADERS,
+        json={"mode": "custom", "selected_rules": []},
+    )
+    assert response.status_code == 409
+
+
+def test_scan_continues_when_sensitive_lexicon_is_invalid(tmp_path: Path) -> None:
+    pptx_path = tmp_path / "invalid-lexicon.pptx"
+    document = Presentation()
+    document.slides.add_slide(document.slide_layouts[6])
+    document.save(pptx_path)
+    sessions = SessionStore()
+    sessions.replace(inspect_pptx(pptx_path))
+    lexicon_path = tmp_path / "terms.txt"
+    lexicon_path.write_bytes(b"\xff\xfe")
+    manager = ScanManager()
+    client = TestClient(
+        create_app(
+            token="secret",
+            session_store=sessions,
+            scan_manager=manager,
+            lexicon_store=LexiconStore(lexicon_path),
+        )
+    )
+    response = client.post("/api/scans", headers=TOKEN_HEADERS, json={"mode": "standard"})
+    assert response.status_code == 202
+    import time
+    deadline = time.monotonic() + 5
+    payload = {}
+    while time.monotonic() < deadline:
+        payload = client.get("/api/scans/current", headers=TOKEN_HEADERS).json()
+        if payload["state"] != "running":
+            break
+        time.sleep(0.01)
+    assert payload["state"] == "incomplete"
+    assert payload["result"]["failures"][0]["rule_id"] == "R010"
+    assert "R002" in payload["result"]["completed_rules"]

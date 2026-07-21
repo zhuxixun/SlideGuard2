@@ -92,6 +92,20 @@ def test_rule_failure_is_isolated_and_marks_result_incomplete(tmp_path: Path) ->
     assert calls == [("R003", ())]
 
 
+def test_preflight_rule_failure_does_not_block_other_rules(tmp_path: Path) -> None:
+    calls = []
+    result = run_scan(
+        _imported(tmp_path),
+        ScanRequest(ScanMode.CUSTOM, selected_rules=("R002", "R010")),
+        rules=_recording_rules(("R002", "R010"), calls),
+        unavailable_rules={"R010": "词库不是有效 UTF-8"},
+    )
+    assert calls == [("R002", ())]
+    assert result.completed_rules == ("R002",)
+    assert result.failures[0].rule_id == "R010"
+    assert result.complete is False
+
+
 def test_cancellation_stops_scheduling_new_rules(tmp_path: Path) -> None:
     token = CancellationToken()
     calls = []

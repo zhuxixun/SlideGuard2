@@ -18,5 +18,11 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "/api/dialog/open-pptx" in javascript
     assert 'type="file"' not in html
     assert "FormData" not in javascript
+    assert "快速检查" in html
+    assert "标准检查" in html
+    assert "自定义检查" in html
+    assert "/api/scans" in javascript
+    assert "/api/scans/current/cancel" in javascript
+    assert "renderScanState" in javascript
     assert "http://" not in html + javascript
     assert "https://" not in html + javascript

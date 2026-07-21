@@ -53,11 +53,13 @@ def run_scan(
     on_progress: ProgressCallback | None = None,
     rules: Mapping[str, Rule] | None = None,
     snapshot_builder: Callable[[ImportedPresentation], PresentationSnapshot] = build_snapshot,
+    unavailable_rules: Mapping[str, str] | None = None,
 ) -> ScanResult:
     cancellation = cancellation or CancellationToken()
     progress = on_progress or (lambda _: None)
-    selected = _selected_rules(request)
+    selected = select_rules(request)
     registry = dict(rules or _default_rules())
+    unavailable_rules = dict(unavailable_rules or {})
     missing = tuple(rule_id for rule_id in selected if rule_id not in registry)
     if missing:
         raise ValueError(f"未知检查规则：{', '.join(missing)}")
@@ -74,6 +76,9 @@ def run_scan(
         if cancellation.cancelled:
             break
         progress(ScanProgress(ScanStage.CHECKING, len(completed), len(selected), rule_id))
+        if rule_id in unavailable_rules:
+            failures.append(RuleFailure(rule_id, unavailable_rules[rule_id]))
+            continue
         try:
             issues.extend(registry[rule_id](snapshot, terms))
         except Exception as exc:  # a rule failure must not abort sibling rules
@@ -98,7 +103,7 @@ def run_scan(
     )
 
 
-def _selected_rules(request: ScanRequest) -> tuple[str, ...]:
+def select_rules(request: ScanRequest) -> tuple[str, ...]:
     if request.mode is ScanMode.QUICK:
         return QUICK_RULES
     if request.mode is ScanMode.STANDARD:
