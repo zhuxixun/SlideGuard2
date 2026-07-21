@@ -20,6 +20,10 @@ class FakeDialogBackend:
         self.thread_ids.append(get_ident())
         return self.values.pop(0)
 
+    def save_report(self, default_name: str, extension: str) -> str | None:
+        self.thread_ids.append(get_ident())
+        return self.values.pop(0)
+
     def close(self) -> None:
         self.thread_ids.append(get_ident())
         self.closed = True
@@ -41,6 +45,19 @@ def test_dialog_commands_run_serially_on_owned_thread() -> None:
     assert backend.closed is True
     assert len(set(backend.thread_ids)) == 1
     assert backend.thread_ids[0] != get_ident()
+
+
+def test_save_report_uses_same_owned_dialog_thread(tmp_path: Path) -> None:
+    destination = tmp_path / "report.html"
+    backend = FakeDialogBackend([str(destination)])
+    service = NativeDialogService(lambda: backend)
+    try:
+        selected = asyncio.run(service.save_report("default.html", ".html"))
+    finally:
+        service.close()
+    assert selected == destination
+    assert backend.closed is True
+    assert len(set(backend.thread_ids)) == 1
 
 
 def test_dialog_api_imports_selected_file_and_cancel(tmp_path: Path) -> None:

@@ -27,6 +27,8 @@ from slideguard.scan.manager import ScanManager, ScanManagerSnapshot
 from slideguard.scan.models import ScanMode, ScanRequest
 from slideguard.preview.svg_builder import PreviewGuide, PreviewObject, build_svg
 import re
+from typing import Literal
+from slideguard.reporting.exporters import default_report_name, export_html, export_xlsx
 
 
 class LexiconResponse(BaseModel):
@@ -44,6 +46,10 @@ class LexiconUpdate(BaseModel):
 class ScanStart(BaseModel):
     mode: ScanMode
     selected_rules: list[str] = Field(default_factory=list)
+
+
+class ReportExport(BaseModel):
+    format: Literal["html", "xlsx"]
 
 
 def create_app(
@@ -211,6 +217,40 @@ def create_app(
                     "slide_count": imported.slide_count,
                 },
             }
+
+        if scan_manager is not None:
+
+            @app.post("/api/reports/export")
+            async def export_report(request: ReportExport) -> dict[str, object]:
+                state = scan_manager.snapshot()
+                if state.result is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={"code": "no_scan_result", "message": "当前没有可导出的扫描结果"},
+                    )
+                extension = f".{request.format}"
+                selected = await native_dialog.save_report(
+                    default_report_name(state.result, extension),
+                    extension,
+                )
+                if selected is None:
+                    return {"cancelled": True, "path": None}
+                if selected.suffix.lower() != extension:
+                    selected = selected.with_suffix(extension)
+                try:
+                    exporter = export_html if request.format == "html" else export_xlsx
+                    await asyncio.to_thread(exporter, state.result, selected)
+                except FileExistsError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={"code": "report_exists", "message": str(exc)},
+                    ) from exc
+                except (OSError, ValueError) as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail={"code": "report_export_failed", "message": str(exc)},
+                    ) from exc
+                return {"cancelled": False, "path": str(selected.resolve())}
 
     if lifecycle is not None:
 

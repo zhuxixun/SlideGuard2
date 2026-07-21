@@ -30,6 +30,9 @@ const nodes = {
   previousIssue: document.querySelector("#previous-issue"),
   nextIssue: document.querySelector("#next-issue"),
   ignoreIssue: document.querySelector("#ignore-issue"),
+  exportHtml: document.querySelector("#export-html"),
+  exportXlsx: document.querySelector("#export-xlsx"),
+  exportStatus: document.querySelector("#export-status"),
   manage: document.querySelector("#manage-lexicon"),
   summary: document.querySelector("#lexicon-summary"),
   warning: document.querySelector("#lexicon-warning"),
@@ -254,6 +257,8 @@ function renderScanState(state) {
       nodes.scanResult.hidden = false;
       scanIssues = state.result.issues.map((found) => ({ ...found, status: "pending" }));
       nodes.viewIssues.hidden = !scanIssues.length;
+      nodes.exportHtml.hidden = false;
+      nodes.exportXlsx.hidden = false;
       prepareRuleFilter();
     } else {
       nodes.scanProgress.textContent = state.error || "扫描失败";
@@ -265,6 +270,29 @@ nodes.viewIssues.addEventListener("click", () => {
   applyIssueFilters();
   nodes.issuesPanel.scrollIntoView({ behavior: "smooth" });
 });
+nodes.exportHtml.addEventListener("click", () => exportReport("html"));
+nodes.exportXlsx.addEventListener("click", () => exportReport("xlsx"));
+
+async function exportReport(format) {
+  nodes.exportHtml.disabled = true;
+  nodes.exportXlsx.disabled = true;
+  nodes.exportStatus.hidden = false;
+  nodes.exportStatus.textContent = "正在导出报告…";
+  try {
+    const response = await apiFetch("/api/reports/export", {
+      method: "POST",
+      body: JSON.stringify({ format }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail?.message || "报告导出失败");
+    nodes.exportStatus.textContent = data.cancelled ? "已取消导出" : `报告已保存到：${data.path}`;
+  } catch (error) {
+    nodes.exportStatus.textContent = error.message;
+  } finally {
+    nodes.exportHtml.disabled = false;
+    nodes.exportXlsx.disabled = false;
+  }
+}
 [nodes.issueSearch, nodes.severityFilter, nodes.ruleFilter, nodes.fixableFilter, nodes.statusFilter]
   .forEach((control) => control.addEventListener("input", applyIssueFilters));
 nodes.previousIssue.addEventListener("click", () => showIssue(Math.max(0, activeIssueIndex - 1)));

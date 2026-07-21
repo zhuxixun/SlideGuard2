@@ -31,5 +31,8 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "status-filter" in html
     assert "showIssue" in javascript
     assert "/preview?issue_id=" in javascript
+    assert "导出 HTML 报告" in html
+    assert "导出 Excel 报告" in html
+    assert "/api/reports/export" in javascript
     assert "http://" not in html + javascript
     assert "https://" not in html + javascript

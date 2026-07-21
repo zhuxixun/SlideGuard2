@@ -15,6 +15,8 @@ T = TypeVar("T")
 class DialogBackend(Protocol):
     def open_pptx(self) -> str | None: ...
 
+    def save_report(self, default_name: str, extension: str) -> str | None: ...
+
     def close(self) -> None: ...
 
 
@@ -38,6 +40,12 @@ class NativeDialogService:
     async def open_pptx(self) -> Path | None:
         value = await asyncio.wrap_future(
             self._submit(lambda backend: backend.open_pptx())
+        )
+        return Path(value) if isinstance(value, str) and value else None
+
+    async def save_report(self, default_name: str, extension: str) -> Path | None:
+        value = await asyncio.wrap_future(
+            self._submit(lambda backend: backend.save_report(default_name, extension))
         )
         return Path(value) if isinstance(value, str) and value else None
 
@@ -90,6 +98,16 @@ class _TkDialogBackend:
         )
         return value or None
 
+    def save_report(self, default_name: str, extension: str) -> str | None:
+        label = "HTML 报告" if extension == ".html" else "Excel 报告"
+        value = self._filedialog.asksaveasfilename(
+            parent=self._root,
+            title="导出质检报告",
+            initialfile=default_name,
+            defaultextension=extension,
+            filetypes=((label, f"*{extension}"),),
+        )
+        return value or None
+
     def close(self) -> None:
         self._root.destroy()
-
