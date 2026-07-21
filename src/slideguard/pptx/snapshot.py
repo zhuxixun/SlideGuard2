@@ -59,6 +59,7 @@ class TextRunSnapshot:
     font_size_pt: float | None
     bold: bool | None
     italic: bool | None
+    paragraph_level: int
     start: int
     end: int
 
@@ -213,14 +214,16 @@ def _text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot:  # type: i
         for run in paragraph.runs:
             direct_or_inherited = run.font.name or paragraph.font.name or _placeholder_font(shape, paragraph_index)
             latin, east_asia = _effective_fonts(shape, direct_or_inherited, theme_fonts)
+            font_size = run.font.size or paragraph.font.size or _placeholder_font_size(shape, paragraph_index)
             runs.append(
             TextRunSnapshot(
                 text=run.text,
                 font_name=latin,
                 east_asia_font_name=east_asia,
-                font_size_pt=run.font.size.pt if run.font.size is not None else None,
+                font_size_pt=font_size.pt if font_size is not None else None,
                 bold=run.font.bold,
                 italic=run.font.italic,
+                paragraph_level=paragraph.level,
                 start=offset,
                 end=offset + len(run.text),
             )
@@ -254,6 +257,7 @@ def _shape_text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot | Non
                             font_size_pt=run.font.size.pt if run.font.size is not None else None,
                             bold=run.font.bold,
                             italic=run.font.italic,
+                            paragraph_level=paragraph.level,
                             start=offset,
                             end=offset + len(run.text),
                         )
@@ -285,6 +289,19 @@ def _placeholder_font(shape, paragraph_index: int) -> str | None:  # type: ignor
         paragraph = paragraphs[min(paragraph_index, len(paragraphs) - 1)]
         if paragraph.font.name:
             return paragraph.font.name
+    return None
+
+
+def _placeholder_font_size(shape, paragraph_index: int):  # type: ignore[no-untyped-def]
+    current = shape
+    while getattr(current, "is_placeholder", False):
+        current = getattr(current, "_base_placeholder", None)
+        if current is None or not getattr(current, "has_text_frame", False):
+            break
+        paragraphs = current.text_frame.paragraphs
+        paragraph = paragraphs[min(paragraph_index, len(paragraphs) - 1)]
+        if paragraph.font.size is not None:
+            return paragraph.font.size
     return None
 
 
