@@ -13,6 +13,7 @@ class FixOperation:
     original_value: str
     target_value: str
     issue_ids: tuple[str, ...]
+    fact_keys: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,3 +23,5 @@ class FixPlan:
     destination: Path
     operations: tuple[FixOperation, ...]
     issue_ids: tuple[str, ...]
+    selected_facts: tuple[tuple[str, str], ...]
+    baseline_fact_keys: frozenset[str]

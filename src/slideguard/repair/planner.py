@@ -68,6 +68,7 @@ def build_fix_plan(
                 original_value="；".join(found.actual_value for found in found_issues),
                 target_value=targets.pop(),
                 issue_ids=tuple(found.issue_id for found in found_issues),
+                fact_keys=tuple(found.fact_key for found in found_issues),
             )
         )
     operations.sort(
@@ -83,6 +84,8 @@ def build_fix_plan(
         destination=destination,
         operations=tuple(operations),
         issue_ids=selected_ids,
+        selected_facts=tuple((issue_id, issues[issue_id].fact_key) for issue_id in selected_ids),
+        baseline_fact_keys=frozenset(found.fact_key for found in result.issues),
     )
 
 
