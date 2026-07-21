@@ -72,3 +72,47 @@ def test_r006_marks_text_beyond_page_as_s2(tmp_path: Path) -> None:
     assert len(issues) == 1
     assert issues[0].severity is Severity.S2
     assert "文字超出页面" in issues[0].evidence
+
+
+def test_r006_measures_each_table_cell_independently(tmp_path: Path) -> None:
+    path = tmp_path / "table-overflow.pptx"
+    document = Presentation()
+    slide = document.slides.add_slide(document.slide_layouts[6])
+    table = slide.shapes.add_table(1, 2, 0, 0, Inches(2), Pt(30)).table
+    cell = table.cell(0, 0)
+    cell.margin_left = 0
+    cell.margin_right = 0
+    cell.margin_top = 0
+    cell.margin_bottom = 0
+    run = cell.text_frame.paragraphs[0].add_run()
+    run.text = "单元格中的长文字会自动换成多行"
+    run.font.name = "Microsoft YaHei"
+    run.font.size = Pt(18)
+    document.save(path)
+    issues = check_text_overflow(build_snapshot(inspect_pptx(path)))
+    assert len(issues) == 1
+    assert ":cell:0:0" in issues[0].object_keys[0]
+
+
+def test_r006_includes_paragraph_spacing_in_height(tmp_path: Path) -> None:
+    path = tmp_path / "paragraph-spacing.pptx"
+    document = Presentation()
+    slide = document.slides.add_slide(document.slide_layouts[6])
+    box = slide.shapes.add_textbox(0, 0, Inches(4), Pt(50))
+    box.text_frame.margin_top = 0
+    box.text_frame.margin_bottom = 0
+    first = box.text_frame.paragraphs[0]
+    first.space_after = Pt(10)
+    first_run = first.add_run()
+    first_run.text = "第一段"
+    first_run.font.name = "Microsoft YaHei"
+    first_run.font.size = Pt(20)
+    second = box.text_frame.add_paragraph()
+    second_run = second.add_run()
+    second_run.text = "第二段"
+    second_run.font.name = "Microsoft YaHei"
+    second_run.font.size = Pt(20)
+    document.save(path)
+    issues = check_text_overflow(build_snapshot(inspect_pptx(path)))
+    assert len(issues) == 1
+    assert "高度超出" in issues[0].evidence

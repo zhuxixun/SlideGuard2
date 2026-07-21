@@ -75,7 +75,7 @@ class ThemeFonts:
 @dataclass(frozen=True, slots=True)
 class TextFrameSnapshot:
     text: str
-    paragraphs: tuple[tuple[TextRunSnapshot, ...], ...]
+    paragraphs: tuple["ParagraphSnapshot", ...]
     margin_left_pt: float
     margin_right_pt: float
     margin_top_pt: float
@@ -84,6 +84,35 @@ class TextFrameSnapshot:
     auto_size: str | None
     auto_fit_scale: float
     vertical: bool
+    vertical_anchor: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ParagraphSnapshot:
+    runs: tuple[TextRunSnapshot, ...]
+    line_spacing_multiplier: float | None
+    line_spacing_pt: float | None
+    space_before_pt: float
+    space_after_pt: float
+    alignment: str | None
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        return iter(self.runs)
+
+    def __getitem__(self, index: int) -> TextRunSnapshot:
+        return self.runs[index]
+
+    def __len__(self) -> int:
+        return len(self.runs)
+
+
+@dataclass(frozen=True, slots=True)
+class TableCellSnapshot:
+    key: str
+    row: int
+    column: int
+    bounds_pt: Rect
+    text_frame: TextFrameSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +127,7 @@ class SlideObject:
     from_master: bool
     placeholder_type: str | None
     text_frame: TextFrameSnapshot | None
+    table_cells: tuple[TableCellSnapshot, ...]
     children: tuple["SlideObject", ...]
 
 
@@ -210,12 +240,13 @@ def _shape_snapshot(shape, part_uri: str, slide_index: int, unsupported: list[Un
         from_master=False,
         placeholder_type=placeholder_type,
         text_frame=_shape_text_frame(shape, theme_fonts),
+        table_cells=_table_cells(shape, key, theme_fonts),
         children=children,
     )
 
 
 def _text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot:  # type: ignore[no-untyped-def]
-    paragraph_snapshots: list[tuple[TextRunSnapshot, ...]] = []
+    paragraph_snapshots: list[ParagraphSnapshot] = []
     offset = 0
     for paragraph_index, paragraph in enumerate(shape.text_frame.paragraphs):
         runs: list[TextRunSnapshot] = []
@@ -237,7 +268,7 @@ def _text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot:  # type: i
             )
             )
             offset += len(run.text)
-        paragraph_snapshots.append(tuple(runs))
+        paragraph_snapshots.append(_paragraph_snapshot(paragraph, tuple(runs)))
         if paragraph_index < len(shape.text_frame.paragraphs) - 1:
             offset += 1
     frame = shape.text_frame
@@ -252,6 +283,7 @@ def _text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot:  # type: i
         auto_size=str(frame.auto_size) if frame.auto_size is not None else None,
         auto_fit_scale=_auto_fit_scale(shape.element),
         vertical=_is_vertical_text(shape.element),
+        vertical_anchor=str(frame.vertical_anchor) if frame.vertical_anchor is not None else None,
     )
 
 
@@ -260,7 +292,7 @@ def _shape_text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot | Non
         return _text_frame(shape, theme_fonts)
     if not getattr(shape, "has_table", False):
         return None
-    paragraphs: list[tuple[TextRunSnapshot, ...]] = []
+    paragraphs: list[ParagraphSnapshot] = []
     texts: list[str] = []
     offset = 0
     for row in shape.table.rows:
@@ -283,7 +315,7 @@ def _shape_text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot | Non
                         )
                     )
                     offset += len(run.text)
-                paragraphs.append(tuple(runs))
+                paragraphs.append(_paragraph_snapshot(paragraph, tuple(runs)))
                 if paragraph_index < len(cell.text_frame.paragraphs) - 1:
                     offset += 1
             offset += 1
@@ -298,6 +330,98 @@ def _shape_text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot | Non
         auto_size=None,
         auto_fit_scale=1,
         vertical=False,
+        vertical_anchor=None,
+    )
+
+
+def _paragraph_snapshot(paragraph, runs: tuple[TextRunSnapshot, ...]) -> ParagraphSnapshot:  # type: ignore[no-untyped-def]
+    spacing = paragraph.line_spacing
+    multiplier = spacing if isinstance(spacing, float) else None
+    spacing_pt = spacing.pt if spacing is not None and not isinstance(spacing, float) else None
+    return ParagraphSnapshot(
+        runs=runs,
+        line_spacing_multiplier=multiplier,
+        line_spacing_pt=spacing_pt,
+        space_before_pt=paragraph.space_before.pt if paragraph.space_before is not None else 0,
+        space_after_pt=paragraph.space_after.pt if paragraph.space_after is not None else 0,
+        alignment=str(paragraph.alignment) if paragraph.alignment is not None else None,
+    )
+
+
+def _table_cells(shape, object_key: str, theme_fonts: ThemeFonts) -> tuple[TableCellSnapshot, ...]:  # type: ignore[no-untyped-def]
+    if not getattr(shape, "has_table", False):
+        return ()
+    result: list[TableCellSnapshot] = []
+    table = shape.table
+    top = shape.top
+    for row_index, row in enumerate(table.rows):
+        left = shape.left
+        for column_index, column in enumerate(table.columns):
+            cell = table.cell(row_index, column_index)
+            if not cell.is_spanned:
+                width = sum(
+                    table.columns[index].width
+                    for index in range(column_index, min(len(table.columns), column_index + cell.span_width))
+                )
+                height = sum(
+                    table.rows[index].height
+                    for index in range(row_index, min(len(table.rows), row_index + cell.span_height))
+                )
+                result.append(
+                    TableCellSnapshot(
+                        key=f"{object_key}:cell:{row_index}:{column_index}",
+                        row=row_index,
+                        column=column_index,
+                        bounds_pt=Rect(
+                            left / EMU_PER_POINT,
+                            top / EMU_PER_POINT,
+                            width / EMU_PER_POINT,
+                            height / EMU_PER_POINT,
+                        ),
+                        text_frame=_cell_text_frame(cell, theme_fonts),
+                    )
+                )
+            left += column.width
+        top += row.height
+    return tuple(result)
+
+
+def _cell_text_frame(cell, theme_fonts: ThemeFonts) -> TextFrameSnapshot:  # type: ignore[no-untyped-def]
+    paragraphs: list[ParagraphSnapshot] = []
+    offset = 0
+    for paragraph_index, paragraph in enumerate(cell.text_frame.paragraphs):
+        runs: list[TextRunSnapshot] = []
+        for run in paragraph.runs:
+            font = run.font.name or paragraph.font.name
+            runs.append(
+                TextRunSnapshot(
+                    text=run.text,
+                    font_name=font or theme_fonts.minor_latin,
+                    east_asia_font_name=font or theme_fonts.minor_east_asia,
+                    font_size_pt=(run.font.size or paragraph.font.size).pt if (run.font.size or paragraph.font.size) is not None else None,
+                    bold=run.font.bold,
+                    italic=run.font.italic,
+                    paragraph_level=paragraph.level,
+                    start=offset,
+                    end=offset + len(run.text),
+                )
+            )
+            offset += len(run.text)
+        paragraphs.append(_paragraph_snapshot(paragraph, tuple(runs)))
+        if paragraph_index < len(cell.text_frame.paragraphs) - 1:
+            offset += 1
+    return TextFrameSnapshot(
+        text=cell.text,
+        paragraphs=tuple(paragraphs),
+        margin_left_pt=(cell.margin_left or 0) / EMU_PER_POINT,
+        margin_right_pt=(cell.margin_right or 0) / EMU_PER_POINT,
+        margin_top_pt=(cell.margin_top or 0) / EMU_PER_POINT,
+        margin_bottom_pt=(cell.margin_bottom or 0) / EMU_PER_POINT,
+        word_wrap=True,
+        auto_size=None,
+        auto_fit_scale=1,
+        vertical=False,
+        vertical_anchor=None,
     )
 
 

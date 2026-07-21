@@ -27,7 +27,7 @@ def measure_text_flow(frame: TextFrameSnapshot, available_width_pt: float) -> Te
         line_width = 0.0
         line_height = 0.0
         paragraph_width = 0.0
-        paragraph_height = 0.0
+        paragraph_height = paragraph.space_before_pt
         for run in paragraph:
             if run.font_size_pt is None:
                 unavailable.add("无法解析字号")
@@ -51,13 +51,14 @@ def measure_text_flow(frame: TextFrameSnapshot, available_width_pt: float) -> Te
                 char_height = max(measured.height_pt, size * 1.2)
                 if wrap and line_width > 0 and line_width + char_width > available_width_pt:
                     paragraph_width = max(paragraph_width, line_width)
-                    paragraph_height += line_height
+                    paragraph_height += _line_height(line_height, paragraph)
                     line_width = 0.0
                     line_height = 0.0
                 line_width += char_width
                 line_height = max(line_height, char_height)
         paragraph_width = max(paragraph_width, line_width)
-        paragraph_height += line_height
+        paragraph_height += _line_height(line_height, paragraph)
+        paragraph_height += paragraph.space_after_pt
         max_width = max(max_width, paragraph_width)
         total_height += paragraph_height
     if frame.vertical:
@@ -73,3 +74,13 @@ def measure_text_flow(frame: TextFrameSnapshot, available_width_pt: float) -> Te
 def _is_east_asian(character: str) -> bool:
     code = ord(character)
     return 0x3400 <= code <= 0x9FFF or 0xF900 <= code <= 0xFAFF
+
+
+def _line_height(natural_height: float, paragraph) -> float:  # type: ignore[no-untyped-def]
+    if natural_height <= 0:
+        return 0
+    if paragraph.line_spacing_pt is not None:
+        return paragraph.line_spacing_pt
+    if paragraph.line_spacing_multiplier is not None:
+        return natural_height * paragraph.line_spacing_multiplier
+    return natural_height

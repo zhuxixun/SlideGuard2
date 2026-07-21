@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from slideguard.pptx.snapshot import PresentationSnapshot, SlideObject
+from slideguard.pptx.snapshot import PresentationSnapshot, Rect, SlideObject, TextFrameSnapshot
 from slideguard.preview.text_flow import measure_text_flow
 from slideguard.rules.factory import issue
 from slideguard.rules.models import Issue, Severity
@@ -16,39 +16,22 @@ def check_text_overflow(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
     issues: list[Issue] = []
     for slide in snapshot.slides:
         for obj in _walk(slide.objects):
-            frame = obj.text_frame
-            if frame is None or not frame.text.strip() or obj.object_type == "table":
-                continue
-            effective_width = max(0.0, obj.bounds_pt.width - frame.margin_left_pt - frame.margin_right_pt)
-            effective_height = max(0.0, obj.bounds_pt.height - frame.margin_top_pt - frame.margin_bottom_pt)
-            measurement = measure_text_flow(frame, effective_width)
-            if not measurement.reliable:
-                continue
-            width_excess = measurement.width_pt - effective_width
-            height_excess = measurement.height_pt - effective_height
-            below_minimum = _below_minimum_after_autofit(obj)
-            page_excess = _page_excess(snapshot, obj, measurement.width_pt, measurement.height_pt)
-            if max(width_excess, height_excess, page_excess) <= TOLERANCE_PT and not below_minimum:
-                continue
-            critical = _is_title(obj) or page_excess > TOLERANCE_PT
-            severity = Severity.S2 if critical else Severity.S3
-            fact_key = f"{RULE_ID}:{slide.slide_index}:{obj.key}:text-bounds"
-            issues.append(
-                issue(
-                    fact_key=fact_key,
-                    rule_id=RULE_ID,
-                    slide_index=slide.slide_index,
-                    object_keys=(obj.key,),
-                    severity=severity,
-                    actual_value=(
-                        f"排版 {measurement.width_pt:.2f}×{measurement.height_pt:.2f}pt；"
-                        f"有效区域 {effective_width:.2f}×{effective_height:.2f}pt"
-                    ),
-                    expected_value="排版宽高及页面越界不超过 2pt，自动缩小后字号不低于最小值",
-                    evidence=_evidence(width_excess, height_excess, page_excess, below_minimum),
-                    suggestion="请扩大文本区域、精简文字或人工调整排版。",
+            if obj.object_type == "table":
+                for cell in obj.table_cells:
+                    found = _check_target(
+                        snapshot, slide.slide_index, cell.key, cell.bounds_pt,
+                        cell.text_frame, critical=False, minimum=10,
+                    )
+                    if found is not None:
+                        issues.append(found)
+            elif obj.text_frame is not None:
+                found = _check_target(
+                    snapshot, slide.slide_index, obj.key, obj.bounds_pt,
+                    obj.text_frame, critical=_is_title(obj),
+                    minimum=10 if _is_auxiliary(obj) else 14,
                 )
-            )
+                if found is not None:
+                    issues.append(found)
     return tuple(issues)
 
 
@@ -58,23 +41,61 @@ def _walk(objects: tuple[SlideObject, ...]):  # type: ignore[no-untyped-def]
         yield from _walk(obj.children)
 
 
-def _below_minimum_after_autofit(obj: SlideObject) -> bool:
-    assert obj.text_frame is not None
-    if obj.text_frame.auto_fit_scale >= 1:
+def _check_target(
+    snapshot: PresentationSnapshot,
+    slide_index: int,
+    key: str,
+    bounds: Rect,
+    frame: TextFrameSnapshot,
+    *,
+    critical: bool,
+    minimum: float,
+) -> Issue | None:
+    if not frame.text.strip():
+        return None
+    effective_width = max(0.0, bounds.width - frame.margin_left_pt - frame.margin_right_pt)
+    effective_height = max(0.0, bounds.height - frame.margin_top_pt - frame.margin_bottom_pt)
+    measurement = measure_text_flow(frame, effective_width)
+    if not measurement.reliable:
+        return None
+    width_excess = measurement.width_pt - effective_width
+    height_excess = measurement.height_pt - effective_height
+    below_minimum = _below_minimum_after_autofit(frame, minimum)
+    page_excess = _page_excess(snapshot, bounds, frame, measurement.width_pt, measurement.height_pt)
+    if max(width_excess, height_excess, page_excess) <= TOLERANCE_PT and not below_minimum:
+        return None
+    severity = Severity.S2 if critical or page_excess > TOLERANCE_PT else Severity.S3
+    fact_key = f"{RULE_ID}:{slide_index}:{key}:text-bounds"
+    return issue(
+        fact_key=fact_key,
+        rule_id=RULE_ID,
+        slide_index=slide_index,
+        object_keys=(key,),
+        severity=severity,
+        actual_value=(
+            f"排版 {measurement.width_pt:.2f}×{measurement.height_pt:.2f}pt；"
+            f"有效区域 {effective_width:.2f}×{effective_height:.2f}pt"
+        ),
+        expected_value="排版宽高及页面越界不超过 2pt，自动缩小后字号不低于最小值",
+        evidence=_evidence(width_excess, height_excess, page_excess, below_minimum),
+        suggestion="请扩大文本区域、精简文字或人工调整排版。",
+    )
+
+
+def _below_minimum_after_autofit(frame: TextFrameSnapshot, minimum: float) -> bool:
+    if frame.auto_fit_scale >= 1:
         return False
-    minimum = 10.0 if _is_auxiliary(obj) else 14.0
     return any(
-        run.font_size_pt is not None and run.font_size_pt * obj.text_frame.auto_fit_scale < minimum
-        for paragraph in obj.text_frame.paragraphs
+        run.font_size_pt is not None and run.font_size_pt * frame.auto_fit_scale < minimum
+        for paragraph in frame.paragraphs
         for run in paragraph
         if run.text.strip()
     )
 
 
-def _page_excess(snapshot: PresentationSnapshot, obj: SlideObject, width: float, height: float) -> float:
-    assert obj.text_frame is not None
-    left = obj.bounds_pt.left + obj.text_frame.margin_left_pt
-    top = obj.bounds_pt.top + obj.text_frame.margin_top_pt
+def _page_excess(snapshot: PresentationSnapshot, bounds: Rect, frame: TextFrameSnapshot, width: float, height: float) -> float:
+    left = bounds.left + frame.margin_left_pt
+    top = bounds.top + frame.margin_top_pt
     return max(0.0, -left, -top, left + width - snapshot.slide_width_pt, top + height - snapshot.slide_height_pt)
 
 
