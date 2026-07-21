@@ -1,4 +1,4 @@
-# SlideGuard MVP 技术实现方案（评审稿 v0.2）
+# SlideGuard MVP 技术实现方案（评审稿 v0.3）
 
 ## 1. 方案结论
 
@@ -25,7 +25,7 @@ SlideGuard MVP 采用单进程 Python 桌面应用：
 3. 页面预览以“满足定位和高亮”为目标，由后端生成 SVG 描述，不承诺与 PowerPoint 像素级一致。
 4. SmartArt、OLE、视频、复杂艺术字等未支持对象保留原始 XML 和关联文件，预览中使用占位框表示。
 5. 文本溢出是最大技术风险，正式开发前必须先验证 Pillow/FreeType 与 PowerPoint 的排版误差。
-6. 相同输入、规则版本和程序版本必须产生相同检测结果。
+6. 相同PPTX、规则版本、程序版本和敏感词库内容必须产生相同检测结果。
 
 ## 3. 总体架构
 
@@ -41,7 +41,7 @@ SlideGuard MVP 采用单进程 Python 桌面应用：
 │ Scan Orchestrator / Cancellation / Progress                        │
 ├──────────────┬────────────────┬──────────────┬─────────────────────┤
 │ PPTX Parser  │ SVG Preview    │ Rule Engine  │ Report Exporter     │
-│ python-pptx  │ Pillow Metrics │ R002-R009    │ HTML / XLSX         │
+│ python-pptx  │ Pillow Metrics │ R002-R010    │ HTML / XLSX         │
 ├──────────────┴────────────────┼──────────────┴─────────────────────┤
 │ lxml + zipfile XML Reader / Minimal Patcher / Output Validator     │
 └─────────────────────────────────────────────────────────────────────┘
@@ -101,6 +101,7 @@ SlideGuard2/
       alignment.py
       text_margin.py
       title.py
+      sensitive_text.py
     reporting/
       html_exporter.py
       excel_exporter.py
@@ -111,6 +112,9 @@ SlideGuard2/
       cleanup.py
   rules/
     builtin-rules-v1.0.json
+  data/
+    config/
+      sensitive-terms.txt
   tests/
     unit/
     integration/
@@ -135,6 +139,7 @@ class PresentationSnapshot:
     slide_width_pt: float
     slide_height_pt: float
     slides: tuple[SlideSnapshot, ...]
+    text_occurrences: tuple[TextOccurrence, ...]
     unsupported_objects: tuple[UnsupportedObject, ...]
 
 @dataclass(frozen=True)
@@ -157,17 +162,26 @@ class SlideObject:
     placeholder_type: str | None
     text_frame: TextFrameSnapshot | None
     children: tuple["SlideObject", ...]
+
+@dataclass(frozen=True)
+class TextOccurrence:
+    key: ObjectKey
+    slide_index: int
+    source: TextSource
+    text: str
+    visible: bool
+    character_map: tuple[CharacterLocation, ...]
 ```
 
-`PresentationSnapshot` 构建完成后不可修改。规则只读取 Snapshot，修复通过单独的 FixPlan 操作源 PPTX 的工作副本。
+`text_occurrences` 统一保存页面、母版、版式、表格、图表和演讲者备注中的可识别文本。不可见或位于画布外的文本也保留，供R010检查；`character_map` 将合并后的文本索引映射回XML节点和字符位置。`PresentationSnapshot` 构建完成后不可修改。规则只读取 Snapshot，修复通过单独的 FixPlan 操作源 PPTX 的工作副本。
 
 ### 5.2 稳定对象标识
 
 ```text
-{slide-part-uri}:{cNvPr-id}:{group-path}:{table-cell}:{paragraph}:{run}
+{source-part-uri}:{source-kind}:{owner-id-or-path}:{table-cell}:{paragraph}:{run}
 ```
 
-对象名称可能重复，不能作为唯一标识。shape ID 来自 Open XML 的 `cNvPr@id`。表格单元格、段落和 run 在该对象内继续按稳定路径定位。
+对象名称可能重复，不能作为唯一标识。普通shape的 owner ID 来自 Open XML 的 `cNvPr@id`；母版、版式、图表和备注等没有shape ID的文本使用其部件内稳定XML路径。表格单元格、段落和run在所有者内继续按稳定路径定位。
 
 ### 5.3 问题模型
 
@@ -218,6 +232,7 @@ class Issue:
 - 表格和图表框；
 - 对象 ID、位置、尺寸和旋转；
 - 段落、run、字号和直接字体格式；
+- 演讲者备注及其与页面的关系；
 - SmartArt、OLE、媒体等未支持对象的识别。
 
 ### 7.2 lxml 补充负责
@@ -226,6 +241,7 @@ class Issue:
 - 最终生效字体和字号解析；
 - python-pptx 未公开的 XML 属性；
 - 精确字符路径和稳定对象定位；
+- 母版、版式、图表及备注中的可识别文本抽取；
 - 未支持对象及关联部件清单；
 - 自动修复时的目标节点修改。
 
@@ -244,6 +260,16 @@ run直接格式
 ```
 
 每个最终值记录来源，供问题详情中的“标准来源”和“判断依据”展示。
+
+### 7.4 敏感词库
+
+- 发布包在 `data/config/sensitive-terms.txt` 提供空的UTF-8词库文件，但该文件只是内部存储，用户通过主UI维护词条，不需要直接访问或编辑文件。
+- 后端提供读取和整体保存接口；前端完成搜索、逐条新增/编辑/删除和按行批量粘贴，保存前计算并展示新增、修改和删除数量。
+- 后端保存时再次去除首尾空白、忽略空行并按完整字符串去重，不能只信任前端校验；使用同目录临时文件写入并刷新后原子替换，失败时保留原词库。
+- 每次扫描开始时读取一次，去除词条行首尾空白并忽略空行，随后形成不可变内存快照；扫描过程中修改文件只影响下一次扫描。
+- 词库内容的SHA-256只保存在当前Session内存中，用于结果一致性判断，不显示、不写日志、不写报告；报告只包含实际命中的词条和位置，不附带完整词库。
+- 文件缺失、无法读取或不是有效UTF-8时，R010执行失败；空词库允许扫描，但前端和报告必须显示PRD规定的风险提示。
+- 匹配器使用基于Unicode码点的字面量多模式匹配，不做文本归一化、正则表达式或大小写转换；输出通过 `character_map` 映射回对象和字符范围。
 
 ## 8. 浏览器 UI 与页面预览
 
@@ -331,17 +357,17 @@ class Rule(Protocol):
 导入验证
   -> 构建不可变 Snapshot
   -> 建立SVG预览模型和文字边界
-  -> 单页规则 R002/R003/R004/R006/R008
+  -> 单页规则 R002/R003/R004/R006/R008/R010
   -> 跨对象/跨页规则 R005/R007/R009
   -> Issue 去重
   -> 汇总与排序
 ```
 
-快速检查：R002、R003、R004、R006、R009。
+快速检查：R002、R003、R004、R006、R009、R010。
 
-标准检查：R002—R009。
+标准检查：R002—R010。
 
-自定义检查：按选择发布 R002—R009 的问题；内部可以复用公共计算，但未选择规则不得发布 Issue。
+自定义检查：按选择发布 R002—R010 的问题；内部可以复用公共计算，但未选择规则不得发布 Issue。
 
 ### 10.1 规则实现
 
@@ -355,6 +381,7 @@ class Rule(Protocol):
 | R007 元素对齐 | 候选分组、参考线聚类、70%支持率 | 是 |
 | R008 文字安全边距 | 实际文字边界与页面四侧3%区域比较 | 否 |
 | R009 标题一致性 | 标题占位符、固定样式、版式参考线、冒号后缩小 | 是 |
+| R010 敏感及残留文本 | 对全部可识别文本执行本地词库字面量匹配，定位字符范围 | 否 |
 
 ### 10.2 R007 对齐算法
 
@@ -425,7 +452,7 @@ class FixPlan:
 - R007：只修改对象 x/y，不改尺寸、旋转和层级；
 - R009：修改标题字体、字号、加粗、颜色、位置；必要时拆分冒号后的 run 并缩小到不低于14pt。
 
-R002、R003、R006、R008 不支持自动修复。
+R002、R003、R006、R008、R010 不支持自动修复。
 
 ### 12.3 最小 XML 修改
 
@@ -473,6 +500,8 @@ R002、R003、R006、R008 不支持自动修复。
 - 蓝色表示参考对象和参考线；
 - 切换问题只更新 SVG Overlay，不重新解析 PPTX。
 
+扫描设置页显示敏感词库状态、有效词条数和“管理敏感词库”按钮，不显示内部文件路径。点击后在主UI内打开管理弹窗，支持搜索、逐条新增/编辑/删除和按行批量粘贴；关闭未保存的弹窗前二次确认。保存前展示新增、修改和删除数量，确认成功后刷新词条数。词库为空时显示风险提示；读取失败时仍允许发起扫描，但R010必须返回规则失败，标准检查结果必须标记为未完整完成。P0不提供词库文件导入导出、词条分类、权限管理或云同步。
+
 只有 `Completed + Standard + 有可修复选中项` 时才允许进入修复确认。按钮状态由后端 Session 状态和前端路由守卫共同控制，后端必须再次校验，不能信任浏览器按钮状态。
 
 ### 13.1 API
@@ -480,6 +509,8 @@ R002、R003、R006、R008 不支持自动修复。
 ```text
 GET  /                         # 前端入口
 POST /api/dialog/open-pptx     # 原生打开对话框
+GET  /api/lexicon              # 读取词条、可用状态和数量
+PUT  /api/lexicon              # 校验并原子保存完整词条列表
 POST /api/scan                 # 开始扫描
 POST /api/scan/cancel          # 取消扫描
 GET  /api/session              # 当前Session摘要
@@ -496,6 +527,8 @@ WS   /ws                       # 进度和状态事件
 
 所有 `/api`、Session资源和 WebSocket 请求都必须验证 Token。接口不接收任意文件系统路径；文件路径只能由原生对话框产生，或来自当前 Session 已登记的路径。
 
+词库接口不接收文件路径。`PUT /api/lexicon` 采用后端当前词库摘要作为并发前置条件；若打开管理弹窗后词库已被其他标签修改，则拒绝覆盖并要求刷新。保存请求和响应设置`Cache-Control: no-store`，词条不得进入访问日志或异常日志。
+
 ## 14. 报告
 
 ### 14.1 HTML
@@ -506,6 +539,7 @@ WS   /ws                       # 进度和状态事件
 - 设置 Content Security Policy，禁止外部资源和网络连接；
 - JavaScript 只做本地筛选和展开；
 - 未完成报告在页首显示警告。
+- R010命中项只输出实际命中的词条、来源和字符范围，不嵌入或附加完整敏感词库；空词库时显示风险提示。
 
 ### 14.2 Excel
 
@@ -523,6 +557,8 @@ SlideGuard/
   _internal/
   rules/
   data/
+    config/
+      sensitive-terms.txt
     logs/
     sessions/
     temp/
@@ -531,6 +567,7 @@ SlideGuard/
 - Session 使用随机 ID，不使用 PPT 文件名；
 - 日志只记录时间、版本、阶段、错误码、规则 ID 和对象类型；
 - 不记录 PPT 正文、图片、完整路径或文件哈希；
+- 不记录敏感词库内容、词库哈希或命中的文本上下文；
 - 不使用 requests、httpx、WebEngine、更新器或遥测 SDK；
 - Session 结束、取消和下次启动时清理过期临时文件；
 - 删除前验证绝对路径必须位于 data 根目录；
@@ -570,9 +607,10 @@ pyinstaller packaging/slideguard.spec --noconfirm --clean
 2. 在 Windows x64 构建；
 3. 运行单元、集成、离线和冒烟测试；
 4. 检查打包目录不存在开发文件、测试数据和外部联网组件；
-5. 生成依赖及许可证清单；
-6. 压缩为 `SlideGuard-{version}-win-x64.zip`；
-7. 在全新 Windows 10 22H2 和 Windows 11 环境解压验收。
+5. 检查 `data/config/sensitive-terms.txt` 存在、为空且编码为UTF-8，不将内部测试词库打入发布包；
+6. 生成依赖及许可证清单；
+7. 压缩为 `SlideGuard-{version}-win-x64.zip`；
+8. 在全新 Windows 10 22H2 和 Windows 11 环境解压验收。
 
 ## 17. 性能设计
 
@@ -608,6 +646,7 @@ pyinstaller packaging/slideguard.spec --noconfirm --clean
 - Issue 去重和排序；
 - FixPlan 冲突与前置条件；
 - HTML 转义和 Excel 公式注入。
+- 敏感词库增删改查、搜索、批量粘贴、未保存关闭确认、UTF-8读取、原子保存与失败回退、并发修改冲突、首尾空白、空行、字面量匹配、大小写差异、重复及重叠命中。
 
 ### 18.2 Golden PPTX
 
@@ -634,6 +673,7 @@ pyinstaller packaging/slideguard.spec --noconfirm --clean
 - 中文、空格、符号和长路径；
 - 断网与联网结果一致；
 - 峰值内存不超过2GB。
+- R010覆盖正文、标题、表格、图表、母版/版式、备注、不可见及画布外文本，并覆盖空、缺失、损坏词库和图片文字不可检查状态。
 
 另外覆盖localhost安全测试：无Token、错误Token、伪造Host、第三方Origin、重复POST、第二标签页、WebSocket断开、浏览器直接关闭和空闲超时。
 
@@ -652,6 +692,7 @@ pyinstaller packaging/slideguard.spec --noconfirm --clean
 - XML 最小修改字体、标题和位置；
 - 未支持部件哈希保持不变；
 - 50页解析、布局耗时和峰值内存；
+- 全文本来源抽取、字符位置回映射和敏感词库不可变快照；
 - PyInstaller onedir 在干净 Windows 环境运行。
 
 退出条件：
@@ -666,7 +707,7 @@ pyinstaller packaging/slideguard.spec --noconfirm --clean
 ### Phase 1：扫描内核
 
 - 工程骨架和不可变 Snapshot；
-- R001—R006、R008、R009；
+- R001—R006、R008—R010；
 - 规则配置、Issue 和基础测试；
 - 扫描进度与取消。
 
