@@ -5,6 +5,9 @@ history.replaceState(null, "", `${window.location.pathname}${window.location.sea
 const nodes = {
   status: document.querySelector("#status"),
   exit: document.querySelector("#exit"),
+  openPptx: document.querySelector("#open-pptx"),
+  fileSummary: document.querySelector("#file-summary"),
+  fileError: document.querySelector("#file-error"),
   manage: document.querySelector("#manage-lexicon"),
   summary: document.querySelector("#lexicon-summary"),
   warning: document.querySelector("#lexicon-warning"),
@@ -118,6 +121,7 @@ if (!token) {
       return response.json();
     })
     .then(async () => {
+      nodes.openPptx.disabled = false;
       nodes.status.textContent = "本地服务连接成功。";
       await loadLexicon();
       const socketProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -133,6 +137,28 @@ nodes.manage.addEventListener("click", () => {
   nodes.bulk.value = "";
   renderTerms();
   nodes.dialog.showModal();
+});
+nodes.openPptx.addEventListener("click", async () => {
+  nodes.openPptx.disabled = true;
+  nodes.fileError.hidden = true;
+  nodes.fileSummary.textContent = "正在读取文件…";
+  try {
+    const response = await apiFetch("/api/dialog/open-pptx", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail?.message || "文件读取失败");
+    if (data.cancelled) {
+      nodes.fileSummary.textContent = "尚未打开文件";
+      return;
+    }
+    const sizeMb = (data.file.size_bytes / 1024 / 1024).toFixed(2);
+    nodes.fileSummary.textContent = `${data.file.name} · ${sizeMb} MB · ${data.file.slide_count} 页`;
+  } catch (error) {
+    nodes.fileSummary.textContent = "尚未打开文件";
+    nodes.fileError.textContent = error.message;
+    nodes.fileError.hidden = false;
+  } finally {
+    nodes.openPptx.disabled = false;
+  }
 });
 nodes.close.addEventListener("click", closeDialog);
 nodes.search.addEventListener("input", renderTerms);

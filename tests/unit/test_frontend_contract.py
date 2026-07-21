@@ -14,6 +14,9 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert 'method: "PUT"' in javascript
     assert "expected_digest" in javascript
     assert "window.confirm" in javascript
+    assert "打开 PPT 文件" in html
+    assert "/api/dialog/open-pptx" in javascript
+    assert 'type="file"' not in html
+    assert "FormData" not in javascript
     assert "http://" not in html + javascript
     assert "https://" not in html + javascript
-

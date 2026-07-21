@@ -11,6 +11,7 @@ import webbrowser
 import uvicorn
 
 from slideguard.lexicon import LexiconStore
+from slideguard.application.session import SessionStore
 from slideguard.runtime import application_root, frontend_root
 from slideguard.server.app import create_app
 from slideguard.server.lifecycle import LifecycleController
@@ -33,6 +34,7 @@ def run() -> None:
         frontend_dir=frontend_root(),
         lifecycle=lifecycle,
         native_dialog=native_dialog,
+        session_store=SessionStore(),
     )
     config = _server_config(app, port)
     server = uvicorn.Server(config)

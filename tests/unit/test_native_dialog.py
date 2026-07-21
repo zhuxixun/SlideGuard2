@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 
 from slideguard.server.app import create_app
 from slideguard.server.native_dialog import NativeDialogService
+from slideguard.application.session import SessionStore
+from pptx import Presentation
 
 
 class FakeDialogBackend:
@@ -41,20 +43,24 @@ def test_dialog_commands_run_serially_on_owned_thread() -> None:
     assert backend.thread_ids[0] != get_ident()
 
 
-def test_dialog_api_returns_selected_path_and_cancel() -> None:
-    backend = FakeDialogBackend(["C:/samples/one.pptx", None])
+def test_dialog_api_imports_selected_file_and_cancel(tmp_path: Path) -> None:
+    sample = tmp_path / "one.pptx"
+    presentation = Presentation()
+    presentation.slides.add_slide(presentation.slide_layouts[6])
+    presentation.save(sample)
+    backend = FakeDialogBackend([str(sample), None])
     service = NativeDialogService(lambda: backend)
+    sessions = SessionStore()
     headers = {"X-SlideGuard-Token": "secret"}
     with TestClient(
-        create_app(token="secret", native_dialog=service)
+        create_app(token="secret", native_dialog=service, session_store=sessions)
     ) as client:
         selected = client.post("/api/dialog/open-pptx", headers=headers)
         cancelled = client.post("/api/dialog/open-pptx", headers=headers)
 
-    assert selected.json() == {
-        "cancelled": False,
-        "path": "C:\\samples\\one.pptx",
-    }
-    assert cancelled.json() == {"cancelled": True, "path": None}
+    assert selected.json()["cancelled"] is False
+    assert selected.json()["file"]["name"] == "one.pptx"
+    assert selected.json()["file"]["slide_count"] == 1
+    assert cancelled.json() == {"cancelled": True, "file": None}
+    assert sessions.current().presentation.path == sample.resolve()
     assert backend.closed is True
-

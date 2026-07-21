@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from slideguard.lexicon import LexiconError, LexiconStore
+from slideguard.application.session import SessionStore
+from slideguard.pptx.importer import PptxImportError, inspect_pptx
 from slideguard.server.lifecycle import LifecycleController
 from slideguard.server.native_dialog import NativeDialogService
 
@@ -43,7 +46,9 @@ def create_app(
     frontend_dir: Path | None = None,
     lifecycle: LifecycleController | None = None,
     native_dialog: NativeDialogService | None = None,
+    session_store: SessionStore | None = None,
 ) -> FastAPI:
+    session_store = session_store or SessionStore()
     @asynccontextmanager
     async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
         try:
@@ -90,11 +95,26 @@ def create_app(
     if native_dialog is not None:
 
         @app.post("/api/dialog/open-pptx")
-        async def open_pptx_dialog() -> dict[str, str | bool | None]:
+        async def open_pptx_dialog() -> dict[str, object]:
             selected = await native_dialog.open_pptx()
+            if selected is None:
+                return {"cancelled": True, "file": None}
+            try:
+                imported = await asyncio.to_thread(inspect_pptx, selected)
+            except PptxImportError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={"code": exc.code, "message": str(exc)},
+                ) from exc
+            session_store.replace(imported)
             return {
-                "cancelled": selected is None,
-                "path": str(selected) if selected is not None else None,
+                "cancelled": False,
+                "file": {
+                    "name": imported.file_name,
+                    "path": str(imported.path),
+                    "size_bytes": imported.size_bytes,
+                    "slide_count": imported.slide_count,
+                },
             }
 
     if lifecycle is not None:
