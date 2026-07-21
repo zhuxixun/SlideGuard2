@@ -625,6 +625,15 @@ def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
                 }
                 for item in result.snapshot.unsupported_objects
             ],
+            "parse_failures": [
+                {
+                    "slide_index": item.slide_index,
+                    "scope": item.scope,
+                    "object_key": item.key,
+                    "reason": item.reason,
+                }
+                for item in result.snapshot.parse_failures
+            ],
             "failures": [
                 {"rule_id": failure.rule_id, "message": failure.message}
                 for failure in result.failures

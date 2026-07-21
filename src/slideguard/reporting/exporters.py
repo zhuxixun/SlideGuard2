@@ -70,6 +70,8 @@ def export_xlsx(result: ScanResult, destination: Path, *, software_version: str 
         ("敏感词库状态", "为空：未发现问题不代表无敏感内容" if result.sensitive_lexicon_empty else "已配置或未执行R010"),
         ("未支持对象总数", len(result.snapshot.unsupported_objects)),
         *_xlsx_unsupported_summary(result),
+        ("解析失败范围总数", len(result.snapshot.parse_failures)),
+        ("解析失败页", "、".join(str(page) for page in sorted({item.slide_index for item in result.snapshot.parse_failures})) or "无"),
         ("请求执行规则", "、".join(result.requested_rules)),
         ("已完成规则", "、".join(result.completed_rules)),
         ("失败规则", "；".join(f"{item.rule_id}: {item.message}" for item in result.failures) or "无"),

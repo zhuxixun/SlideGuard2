@@ -161,6 +161,14 @@ class UnsupportedObject:
 
 
 @dataclass(frozen=True, slots=True)
+class ParseFailure:
+    slide_index: int
+    scope: str
+    key: str | None
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class PresentationSnapshot:
     file_identity: FileIdentity
     slide_width_pt: float
@@ -168,6 +176,7 @@ class PresentationSnapshot:
     slides: tuple[SlideSnapshot, ...]
     text_occurrences: tuple[TextOccurrence, ...]
     unsupported_objects: tuple[UnsupportedObject, ...]
+    parse_failures: tuple[ParseFailure, ...]
 
 
 def build_snapshot(imported: ImportedPresentation) -> PresentationSnapshot:
@@ -175,24 +184,31 @@ def build_snapshot(imported: ImportedPresentation) -> PresentationSnapshot:
     theme_fonts = _read_theme_fonts(imported.path)
     slides: list[SlideSnapshot] = []
     unsupported: list[UnsupportedObject] = []
+    failures: list[ParseFailure] = []
     slide_ids = tuple(document.slides._sldIdLst)  # noqa: SLF001
     for index, slide in enumerate(document.slides, start=1):
         part_uri = str(slide.part.partname).lstrip("/")
-        objects = tuple(
-            _shape_snapshot(shape, part_uri, index, unsupported, theme_fonts)
-            for shape in slide.shapes
-        )
-        slides.append(
-            SlideSnapshot(
-                slide_index=index,
-                slide_part=part_uri,
-                layout_part=str(slide.slide_layout.part.partname).lstrip("/"),
-                layout_title_left_pt=_layout_title_left(slide, document.slide_width),
-                hidden=_slide_hidden(slide_ids[index - 1]),
-                objects=objects,
-                parse_status=ParseStatus.COMPLETE,
+        objects: list[SlideObject] = []
+        for shape in slide.shapes:
+            try:
+                objects.append(_shape_snapshot(shape, part_uri, index, unsupported, failures, theme_fonts))
+            except Exception as exc:
+                failures.append(ParseFailure(index, "object", _safe_shape_key(shape, part_uri), type(exc).__name__))
+        try:
+            slides.append(
+                SlideSnapshot(
+                    slide_index=index,
+                    slide_part=part_uri,
+                    layout_part=str(slide.slide_layout.part.partname).lstrip("/"),
+                    layout_title_left_pt=_layout_title_left(slide, document.slide_width),
+                    hidden=_slide_hidden(slide_ids[index - 1]),
+                    objects=tuple(objects),
+                    parse_status=ParseStatus.PARTIAL if any(item.slide_index == index for item in failures) else ParseStatus.COMPLETE,
+                )
             )
-        )
+        except Exception as exc:
+            failures.append(ParseFailure(index, "page", None, type(exc).__name__))
+            slides.append(SlideSnapshot(index, part_uri, None, None, False, tuple(objects), ParseStatus.PARTIAL))
 
     occurrences = tuple(
         occurrence
@@ -206,18 +222,22 @@ def build_snapshot(imported: ImportedPresentation) -> PresentationSnapshot:
         slides=tuple(slides),
         text_occurrences=occurrences,
         unsupported_objects=tuple(unsupported),
+        parse_failures=tuple(failures),
     )
 
 
-def _shape_snapshot(shape, part_uri: str, slide_index: int, unsupported: list[UnsupportedObject], theme_fonts: ThemeFonts) -> SlideObject:  # type: ignore[no-untyped-def]
+def _shape_snapshot(shape, part_uri: str, slide_index: int, unsupported: list[UnsupportedObject], failures: list[ParseFailure], theme_fonts: ThemeFonts) -> SlideObject:  # type: ignore[no-untyped-def]
     key = f"{part_uri}:shape:{shape.shape_id}"
     shape_type = _shape_type_name(shape.shape_type)
     children = ()
     if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-        children = tuple(
-            _shape_snapshot(child, part_uri, slide_index, unsupported, theme_fonts)
-            for child in shape.shapes
-        )
+        parsed_children = []
+        for child in shape.shapes:
+            try:
+                parsed_children.append(_shape_snapshot(child, part_uri, slide_index, unsupported, failures, theme_fonts))
+            except Exception as exc:
+                failures.append(ParseFailure(slide_index, "object", _safe_shape_key(child, part_uri), type(exc).__name__))
+        children = tuple(parsed_children)
     if shape.shape_type in {
         MSO_SHAPE_TYPE.EMBEDDED_OLE_OBJECT,
         MSO_SHAPE_TYPE.LINKED_OLE_OBJECT,
@@ -246,6 +266,13 @@ def _shape_snapshot(shape, part_uri: str, slide_index: int, unsupported: list[Un
         table_cells=_table_cells(shape, key, theme_fonts),
         children=children,
     )
+
+
+def _safe_shape_key(shape, part_uri: str) -> str | None:  # type: ignore[no-untyped-def]
+    try:
+        return f"{part_uri}:shape:{shape.shape_id}"
+    except Exception:
+        return None
 
 
 def _text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot:  # type: ignore[no-untyped-def]

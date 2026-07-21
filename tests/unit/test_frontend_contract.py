@@ -53,6 +53,7 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "severity-filter" in html
     assert "fixable-filter" in html
     assert "status-filter" in html
+    assert "修复失败" in html
     assert "showIssue" in javascript
     assert "previewRequestId" in javascript
     assert "预览不可用；请查看技术信息和判断依据" in javascript

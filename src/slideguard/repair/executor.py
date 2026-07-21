@@ -16,6 +16,7 @@ from slideguard.repair.models import FixOperation, FixPlan
 from slideguard.repair.planner import FixPlanError, validate_plan_source
 from slideguard.scan.models import RepairComparison, ScanMode, ScanRequest, ScanResult
 from slideguard.scan.orchestrator import run_scan
+from slideguard.rules.models import IssueStatus
 
 
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -84,9 +85,12 @@ def execute_and_recheck(
     fixed = tuple(issue_id for issue_id, fact in plan.selected_facts if fact not in remaining_facts)
     unresolved = tuple(issue_id for issue_id, fact in plan.selected_facts if fact in remaining_facts)
     all_original_facts = plan.baseline_fact_keys
+    unresolved_facts = {fact for _, fact in plan.selected_facts if fact in remaining_facts}
     introduced = 0
     marked = []
     for found in verification.issues:
+        if found.fact_key in unresolved_facts:
+            found = replace(found, status=IssueStatus.FIX_FAILED)
         if found.fact_key not in all_original_facts:
             found = replace(found, introduced_by_repair=True)
             introduced += 1

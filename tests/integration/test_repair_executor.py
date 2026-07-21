@@ -1,5 +1,6 @@
 from dataclasses import replace
 from pathlib import Path
+import shutil
 from zipfile import ZipFile
 
 from pptx import Presentation
@@ -10,7 +11,7 @@ from slideguard.pptx.importer import inspect_pptx
 from slideguard.repair.executor import execute_and_recheck, execute_fix_plan
 from slideguard.repair.planner import build_fix_plan
 from slideguard.rules.factory import issue
-from slideguard.rules.models import Severity
+from slideguard.rules.models import IssueStatus, Severity
 from slideguard.scan.models import ScanMode, ScanRequest
 from slideguard.scan.orchestrator import run_scan
 
@@ -100,3 +101,31 @@ def test_executor_sets_title_style_and_splits_suffix_then_rechecks(tmp_path: Pat
     assert runs[1].font.size == Pt(18)
     assert repaired.destination == output.resolve()
     assert set(repaired.fixed_issue_ids) == {found.issue_id for found in issues}
+
+
+def test_executor_marks_selected_issue_as_fix_failed_when_recheck_still_finds_it(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    source = tmp_path / "source.pptx"
+    output = tmp_path / "unchanged.pptx"
+    document = Presentation()
+    slide = document.slides.add_slide(document.slide_layouts[6])
+    shape = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(1))
+    shape.text = "Test"
+    document.save(source)
+    key = f"ppt/slides/slide1.xml:shape:{shape.shape_id}"
+    found = _fixable("R004", f"R004:1:{key}:font:0:4:Arial", key, "replace_font", "Microsoft YaHei")
+    baseline = _standard_result(source, (found,))
+    plan = build_fix_plan(baseline, (found.issue_id,), output)
+
+    monkeypatch.setattr(
+        "slideguard.repair.executor.execute_fix_plan",
+        lambda _: shutil.copyfile(source, output),
+    )
+    monkeypatch.setattr("slideguard.repair.executor.run_scan", lambda *_args, **_kwargs: baseline)
+
+    repaired = execute_and_recheck(plan)
+
+    assert repaired.unresolved_issue_ids == (found.issue_id,)
+    assert repaired.fixed_issue_ids == ()
+    assert repaired.verification_scan.issues[0].status is IssueStatus.FIX_FAILED

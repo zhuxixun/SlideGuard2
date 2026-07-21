@@ -453,6 +453,10 @@ function renderResultSummary(result, counts) {
     });
     lines.push(`未支持检查的对象：${[...groups].map(([key, count]) => `${key} ${count} 个`).join("；")}。这些范围不得视为检查通过。`);
   }
+  if (result.parse_failures?.length) {
+    const failedPages = [...new Set(result.parse_failures.map((item) => item.slide_index))].join("、");
+    lines.push(`第 ${failedPages} 页存在未完成检查的对象或页面；已跳过失败范围并继续扫描，不能视为检查通过。`);
+  }
   if (!result.complete) {
     lines.unshift(result.cancelled
       ? "扫描已取消：以下结果仅包含取消前已经完成的检查。"
@@ -566,7 +570,8 @@ function renderIssueList() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `issue-item${index === activeIssueIndex ? " active" : ""}`;
-    button.textContent = `${found.severity} · 第 ${found.slide_index} 页 · ${found.rule_id} · ${found.status === "ignored" ? "已忽略" : "待处理"}`;
+    const statusLabels = { pending: "待处理", ignored: "已忽略", fixed: "已修复", fix_failed: "修复失败" };
+    button.textContent = `${found.severity} · 第 ${found.slide_index} 页 · ${found.rule_id} · ${statusLabels[found.status] || found.status}`;
     button.addEventListener("click", () => showIssue(index));
     row.append(checkbox, button);
     nodes.issueList.append(row);

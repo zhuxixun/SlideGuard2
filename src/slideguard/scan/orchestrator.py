@@ -107,7 +107,12 @@ def run_scan(
         completed_rules=tuple(completed),
         failures=tuple(failures),
         issues=unique_issues,
-        complete=not cancelled and not failures and len(completed) == len(selected),
+        complete=(
+            not cancelled
+            and not failures
+            and not snapshot.parse_failures
+            and len(completed) == len(selected)
+        ),
         cancelled=cancelled,
         started_at=started,
         finished_at=datetime.now(timezone.utc),
