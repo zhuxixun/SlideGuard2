@@ -355,12 +355,14 @@ def create_app(
                             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                             detail={"code": "repair_failed", "message": str(exc)},
                         ) from exc
+                    scan_manager.adopt_result(repaired.verification_scan)
                     return {
                         "destination": str(repaired.destination),
                         "fixed_count": len(repaired.fixed_issue_ids),
                         "unresolved_count": len(repaired.unresolved_issue_ids),
                         "introduced_count": repaired.introduced_issue_count,
                         "verification_complete": repaired.verification_scan.complete,
+                        "scan": _scan_snapshot_response(scan_manager.snapshot()),
                     }
 
                 @app.delete("/api/repairs/prepare", status_code=status.HTTP_204_NO_CONTENT)
@@ -522,6 +524,15 @@ def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
                 {"rule_id": failure.rule_id, "message": failure.message}
                 for failure in result.failures
             ],
+            "repair_comparison": (
+                {
+                    "selected_count": result.repair_comparison.selected_count,
+                    "fixed_count": result.repair_comparison.fixed_count,
+                    "unresolved_count": result.repair_comparison.unresolved_count,
+                    "introduced_count": result.repair_comparison.introduced_count,
+                }
+                if result.repair_comparison is not None else None
+            ),
             "issues": [
                 {
                     "issue_id": found.issue_id,
@@ -540,6 +551,7 @@ def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
                         {"kind": found.fix_proposal.kind, "target_value": found.fix_proposal.target_value}
                         if found.fix_proposal is not None else None
                     ),
+                    "introduced_by_repair": found.introduced_by_repair,
                 }
                 for found in result.issues
             ],

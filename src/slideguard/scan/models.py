@@ -43,6 +43,14 @@ class RuleFailure:
 
 
 @dataclass(frozen=True, slots=True)
+class RepairComparison:
+    selected_count: int
+    fixed_count: int
+    unresolved_count: int
+    introduced_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class ScanResult:
     mode: ScanMode
     rule_set_version: str
@@ -55,3 +63,4 @@ class ScanResult:
     cancelled: bool
     started_at: datetime
     finished_at: datetime
+    repair_comparison: RepairComparison | None = None

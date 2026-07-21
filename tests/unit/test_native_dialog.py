@@ -133,6 +133,22 @@ def test_repair_api_prepares_executes_and_preserves_source(tmp_path: Path) -> No
         executed = client.post("/api/repairs/execute", headers=headers)
         assert executed.status_code == 200
         assert executed.json()["fixed_count"] == 1
+        assert executed.json()["scan"]["result"]["mode"] == "standard"
+        assert executed.json()["scan"]["result"]["repair_comparison"] == {
+            "selected_count": 1,
+            "fixed_count": 1,
+            "unresolved_count": 0,
+            "introduced_count": executed.json()["introduced_count"],
+        }
+        refreshed = client.get("/api/scans/current", headers=headers).json()
+        assert refreshed["state"] == "completed"
+        assert all(
+            item["issue_id"] != font_issue["issue_id"]
+            for item in refreshed["result"]["issues"]
+        )
+        assert refreshed["result"]["requested_rules"] == [
+            f"R{number:03d}" for number in range(2, 11)
+        ]
     assert output.is_file()
     assert source.read_bytes() == source_before
     repaired = Presentation(output)

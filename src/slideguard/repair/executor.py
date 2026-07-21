@@ -14,7 +14,7 @@ from slideguard.pptx.importer import inspect_pptx
 from slideguard.pptx.probe import PptxProbeError
 from slideguard.repair.models import FixOperation, FixPlan
 from slideguard.repair.planner import FixPlanError, validate_plan_source
-from slideguard.scan.models import ScanMode, ScanRequest, ScanResult
+from slideguard.scan.models import RepairComparison, ScanMode, ScanRequest, ScanResult
 from slideguard.scan.orchestrator import run_scan
 
 
@@ -91,7 +91,16 @@ def execute_and_recheck(
             found = replace(found, introduced_by_repair=True)
             introduced += 1
         marked.append(found)
-    verification = replace(verification, issues=tuple(marked))
+    verification = replace(
+        verification,
+        issues=tuple(marked),
+        repair_comparison=RepairComparison(
+            selected_count=len(plan.issue_ids),
+            fixed_count=len(fixed),
+            unresolved_count=len(unresolved),
+            introduced_count=introduced,
+        ),
+    )
     return RepairResult(plan.destination, verification, fixed, unresolved, introduced)
 
 

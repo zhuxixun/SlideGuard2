@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from slideguard.pptx.importer import inspect_pptx
 from slideguard.reporting.exporters import default_report_name, export_html, export_xlsx
 from slideguard.rules.factory import issue
 from slideguard.rules.models import Severity
-from slideguard.scan.models import ScanMode, ScanRequest
+from slideguard.scan.models import RepairComparison, ScanMode, ScanRequest
 from slideguard.scan.orchestrator import run_scan
 
 
@@ -75,3 +76,22 @@ def test_default_report_name_contains_source_and_timestamp(tmp_path: Path) -> No
     name = default_report_name(_result(tmp_path), "xlsx")
     assert name.startswith("客户 & 项目_SlideGuard_")
     assert name.endswith(".xlsx")
+
+
+def test_reports_include_repair_comparison(tmp_path: Path) -> None:
+    result = replace(
+        _result(tmp_path),
+        repair_comparison=RepairComparison(3, 2, 1, 1),
+    )
+    html_path = tmp_path / "comparison.html"
+    xlsx_path = tmp_path / "comparison.xlsx"
+    export_html(result, html_path)
+    export_xlsx(result, xlsx_path)
+
+    content = html_path.read_text(encoding="utf-8")
+    assert "修复前后对比" in content
+    assert "已修复 2" in content
+    summary = load_workbook(xlsx_path)["扫描摘要"]
+    values = {row[0].value: row[1].value for row in summary.iter_rows(min_row=2)}
+    assert values["修复选中问题数"] == 3
+    assert values["修复后新增问题数"] == 1

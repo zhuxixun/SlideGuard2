@@ -421,6 +421,8 @@ nodes.confirmRepair.addEventListener("click", async () => {
     nodes.repairStatus.textContent = `修复完成：已修复 ${data.fixed_count}，未修复 ${data.unresolved_count}，新增问题 ${data.introduced_count}。文件：${data.destination}`;
     selectedIssueIds.clear();
     nodes.repairSelected.hidden = true;
+    renderScanState(data.scan);
+    applyIssueFilters();
   } catch (error) {
     nodes.repairStatus.textContent = error.message;
     nodes.confirmRepair.disabled = false;
@@ -435,7 +437,7 @@ async function showIssue(index) {
   renderIssueList();
   const found = filteredIssues[index];
   nodes.issueDetail.hidden = false;
-  nodes.issueHeading.textContent = `${found.severity} · ${found.rule_id} · 第 ${found.slide_index} 页`;
+  nodes.issueHeading.textContent = `${found.severity} · ${found.rule_id} · 第 ${found.slide_index} 页${found.introduced_by_repair ? " · 修复后新增问题" : ""}`;
   nodes.issueDescription.innerHTML = "<dl><dt>实际值</dt><dd></dd><dt>标准值</dt><dd></dd><dt>判断依据</dt><dd></dd><dt>修改建议</dt><dd></dd><dt>可修复性</dt><dd></dd></dl>";
   const values = nodes.issueDescription.querySelectorAll("dd");
   [found.actual_value, found.expected_value, found.evidence, found.suggestion, found.can_auto_fix ? "可自动修复" : "需手动处理"]

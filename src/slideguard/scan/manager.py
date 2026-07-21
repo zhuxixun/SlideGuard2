@@ -7,7 +7,7 @@ from threading import RLock, Thread
 from typing import Callable
 
 from slideguard.pptx.importer import ImportedPresentation
-from slideguard.scan.models import ScanProgress, ScanRequest, ScanResult
+from slideguard.scan.models import ScanProgress, ScanRequest, ScanResult, ScanStage
 from slideguard.rules.models import IssueStatus
 from slideguard.scan.orchestrator import CancellationToken, run_scan, select_rules
 
@@ -102,6 +102,22 @@ class ScanManager:
             self._result = replace(self._result, issues=issues)
         self._publish()
         return True
+
+    def adopt_result(self, result: ScanResult) -> None:
+        with self._lock:
+            if self._state is ManagerState.RUNNING:
+                raise RuntimeError("扫描正在执行，不能替换结果")
+            self._scan_id = token_hex(12)
+            self._result = result
+            self._state = ManagerState.COMPLETED if result.complete else ManagerState.INCOMPLETE
+            self._progress = ScanProgress(
+                ScanStage.SUMMARIZING,
+                len(result.completed_rules),
+                len(result.requested_rules),
+            )
+            self._error = None
+            self._cancellation = None
+        self._publish()
 
     def subscribe(self, listener: Listener) -> Callable[[], None]:
         with self._lock:
