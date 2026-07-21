@@ -1,0 +1,2 @@
+"""SVG preview generation."""
+
