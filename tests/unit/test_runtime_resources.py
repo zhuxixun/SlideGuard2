@@ -7,5 +7,5 @@ def test_development_runtime_resources_are_present() -> None:
     assert application_root() == Path.cwd().resolve()
     assert (frontend_root() / "index.html").is_file()
     assert (frontend_root() / "app.js").is_file()
+    assert (frontend_root() / "app.css").is_file()
     validate_runtime()
-

@@ -29,6 +29,7 @@ def validate_runtime() -> None:
     required = (
         frontend_root() / "index.html",
         frontend_root() / "app.js",
+        frontend_root() / "app.css",
         application_root() / "data" / "config" / "sensitive-terms.txt",
         MICROSOFT_YAHEI_REGULAR,
         MICROSOFT_YAHEI_BOLD,

@@ -34,13 +34,7 @@ def run() -> None:
         lifecycle=lifecycle,
         native_dialog=native_dialog,
     )
-    config = uvicorn.Config(
-        app,
-        host="127.0.0.1",
-        port=port,
-        access_log=False,
-        log_level="warning",
-    )
+    config = _server_config(app, port)
     server = uvicorn.Server(config)
     lifecycle.set_shutdown_callback(lambda: setattr(server, "should_exit", True))
     url = f"{origin}/#token={token}"
@@ -51,6 +45,19 @@ def run() -> None:
         daemon=True,
     ).start()
     server.run(sockets=[listener])
+
+
+def _server_config(app, port: int) -> uvicorn.Config:  # type: ignore[no-untyped-def]
+    return uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=port,
+        access_log=False,
+        log_level="warning",
+        # PyInstaller windowed模式没有sys.stderr；禁用Uvicorn默认日志格式器，
+        # 避免其调用None.isatty()导致启动失败。
+        log_config=None,
+    )
 
 
 def _loopback_listener() -> socket.socket:

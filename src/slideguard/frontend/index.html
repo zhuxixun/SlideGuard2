@@ -4,13 +4,72 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SlideGuard Phase 0</title>
+    <link rel="stylesheet" href="/assets/app.css">
   </head>
   <body>
-    <main>
-      <h1>SlideGuard</h1>
-      <p id="status">正在连接本地服务…</p>
-      <button id="exit" type="button">退出 SlideGuard</button>
+    <main class="shell">
+      <header>
+        <div>
+          <h1>SlideGuard</h1>
+          <p class="muted">文件仅在本机处理，不会上传或访问互联网。</p>
+        </div>
+        <button id="exit" class="secondary" type="button">退出 SlideGuard</button>
+      </header>
+
+      <section class="card" aria-labelledby="connection-title">
+        <h2 id="connection-title">本地服务</h2>
+        <p id="status">正在连接本地服务…</p>
+      </section>
+
+      <section class="card" aria-labelledby="lexicon-title">
+        <div class="row between">
+          <div>
+            <h2 id="lexicon-title">敏感词库</h2>
+            <p id="lexicon-summary" class="muted">正在读取词库状态…</p>
+          </div>
+          <button id="manage-lexicon" type="button" disabled>管理敏感词库</button>
+        </div>
+        <p id="lexicon-warning" class="warning" hidden>
+          敏感词库为空，本项未发现问题不代表无敏感内容。
+        </p>
+      </section>
     </main>
+
+    <dialog id="lexicon-dialog" aria-labelledby="dialog-title">
+      <form method="dialog" id="lexicon-form">
+        <div class="row between">
+          <h2 id="dialog-title">管理敏感词库</h2>
+          <button id="close-lexicon" class="secondary" value="cancel" type="button">关闭</button>
+        </div>
+
+        <label>
+          搜索词条
+          <input id="term-search" type="search" autocomplete="off" placeholder="输入关键字">
+        </label>
+
+        <div class="row add-row">
+          <label class="grow">
+            新增词条
+            <input id="new-term" type="text" autocomplete="off" placeholder="输入一个敏感词">
+          </label>
+          <button id="add-term" type="button">新增</button>
+        </div>
+
+        <div id="term-list" class="term-list" aria-live="polite"></div>
+
+        <label>
+          批量粘贴（每行一个词条）
+          <textarea id="bulk-terms" rows="5" placeholder="旧项目名称&#10;内部代号"></textarea>
+        </label>
+        <button id="add-bulk" class="secondary" type="button">加入批量词条</button>
+
+        <div class="dialog-actions">
+          <span id="edit-summary" class="muted"></span>
+          <button id="save-lexicon" type="submit">保存词库</button>
+        </div>
+      </form>
+    </dialog>
+
     <script type="module" src="/assets/app.js"></script>
   </body>
 </html>

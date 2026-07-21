@@ -139,6 +139,10 @@ def create_app(
                 media_type="text/javascript",
             )
 
+        @app.get("/assets/app.css", include_in_schema=False)
+        def frontend_styles() -> FileResponse:
+            return FileResponse(frontend_dir / "app.css", media_type="text/css")
+
     if lexicon_store is not None:
 
         @app.get("/api/lexicon", response_model=LexiconResponse)
