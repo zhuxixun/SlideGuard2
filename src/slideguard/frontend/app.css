@@ -38,6 +38,8 @@ dialog::backdrop { background: #0006; }
 .issue-list { max-height: 620px; overflow: auto; }
 .issue-item { display: block; width: 100%; margin-bottom: 0.5rem; text-align: left; color: #222; background: #f0f1f3; }
 .issue-item.active { outline: 2px solid #c00000; }
+.issue-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0.4rem; }
+.issue-row > input { width: auto; }
 .issue-detail img { display: block; width: 100%; max-height: 420px; object-fit: contain; background: #fff; border: 1px solid #ddd; }
 .issue-detail dl { display: grid; grid-template-columns: 7rem 1fr; gap: 0.4rem; }
 .issue-detail dt { color: #666; }

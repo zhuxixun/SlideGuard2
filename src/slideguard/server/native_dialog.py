@@ -99,7 +99,7 @@ class _TkDialogBackend:
         return value or None
 
     def save_report(self, default_name: str, extension: str) -> str | None:
-        label = "HTML 报告" if extension == ".html" else "Excel 报告"
+        label = {".html": "HTML 报告", ".xlsx": "Excel 报告", ".pptx": "PowerPoint 演示文稿"}[extension]
         value = self._filedialog.asksaveasfilename(
             parent=self._root,
             title="导出质检报告",

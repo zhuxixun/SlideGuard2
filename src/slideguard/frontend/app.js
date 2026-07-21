@@ -33,6 +33,14 @@ const nodes = {
   exportHtml: document.querySelector("#export-html"),
   exportXlsx: document.querySelector("#export-xlsx"),
   exportStatus: document.querySelector("#export-status"),
+  repairSelected: document.querySelector("#repair-selected"),
+  repairDialog: document.querySelector("#repair-dialog"),
+  closeRepair: document.querySelector("#close-repair"),
+  repairSummary: document.querySelector("#repair-summary"),
+  repairPath: document.querySelector("#repair-path"),
+  repairOperations: document.querySelector("#repair-operations"),
+  confirmRepair: document.querySelector("#confirm-repair"),
+  repairStatus: document.querySelector("#repair-status"),
   manage: document.querySelector("#manage-lexicon"),
   summary: document.querySelector("#lexicon-summary"),
   warning: document.querySelector("#lexicon-warning"),
@@ -57,6 +65,8 @@ let scanIssues = [];
 let filteredIssues = [];
 let activeIssueIndex = -1;
 let previewUrl;
+let lastScanResult;
+const selectedIssueIds = new Set();
 
 function apiFetch(path, options = {}) {
   return fetch(path, {
@@ -256,6 +266,9 @@ function renderScanState(state) {
       nodes.scanResult.textContent = `共发现 ${state.result.issues.length} 个问题：S1 ${counts.S1}，S2 ${counts.S2}，S3 ${counts.S3}，S4 ${counts.S4}`;
       nodes.scanResult.hidden = false;
       scanIssues = state.result.issues.map((found) => ({ ...found, status: "pending" }));
+      lastScanResult = state.result;
+      selectedIssueIds.clear();
+      nodes.repairSelected.hidden = true;
       nodes.viewIssues.hidden = !scanIssues.length;
       nodes.exportHtml.hidden = false;
       nodes.exportXlsx.hidden = false;
@@ -332,14 +345,75 @@ function renderIssueList() {
   nodes.issueList.replaceChildren();
   nodes.issuesCount.textContent = `${filteredIssues.length} 个问题`;
   filteredIssues.forEach((found, index) => {
+    const row = document.createElement("div");
+    row.className = "issue-row";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedIssueIds.has(found.issue_id);
+    checkbox.disabled = !repairAllowed() || !found.can_auto_fix || found.status !== "pending";
+    checkbox.setAttribute("aria-label", `选择 ${found.rule_id} 第 ${found.slide_index} 页问题`);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedIssueIds.add(found.issue_id);
+      else selectedIssueIds.delete(found.issue_id);
+      nodes.repairSelected.hidden = selectedIssueIds.size === 0;
+    });
     const button = document.createElement("button");
     button.type = "button";
     button.className = `issue-item${index === activeIssueIndex ? " active" : ""}`;
     button.textContent = `${found.severity} · 第 ${found.slide_index} 页 · ${found.rule_id} · ${found.status === "ignored" ? "已忽略" : "待处理"}`;
     button.addEventListener("click", () => showIssue(index));
-    nodes.issueList.append(button);
+    row.append(checkbox, button);
+    nodes.issueList.append(row);
   });
 }
+
+function repairAllowed() {
+  return lastScanResult?.complete && lastScanResult.mode === "standard";
+}
+
+nodes.repairSelected.addEventListener("click", async () => {
+  const response = await apiFetch("/api/repairs/prepare", {
+    method: "POST",
+    body: JSON.stringify({ issue_ids: [...selectedIssueIds] }),
+  });
+  const data = await response.json();
+  if (!response.ok) { window.alert(data.detail?.message || "无法生成修复计划"); return; }
+  if (data.cancelled) return;
+  const plan = data.plan;
+  nodes.repairSummary.textContent = `共 ${plan.issue_count} 个问题，涉及 ${plan.page_count} 页、${plan.object_count} 个对象。`;
+  nodes.repairPath.textContent = `输出路径：${plan.destination}`;
+  nodes.repairOperations.replaceChildren();
+  plan.operations.forEach((operation) => {
+    const item = document.createElement("p");
+    item.textContent = `${operation.property_name}：${operation.original_value} → ${operation.target_value}`;
+    nodes.repairOperations.append(item);
+  });
+  nodes.repairStatus.textContent = "";
+  nodes.confirmRepair.disabled = false;
+  nodes.repairDialog.showModal();
+});
+nodes.closeRepair.addEventListener("click", async () => {
+  await apiFetch("/api/repairs/prepare", { method: "DELETE" });
+  nodes.repairDialog.close();
+});
+nodes.confirmRepair.addEventListener("click", async () => {
+  nodes.confirmRepair.disabled = true;
+  nodes.closeRepair.disabled = true;
+  nodes.repairStatus.textContent = "正在修复并执行标准复检…";
+  try {
+    const response = await apiFetch("/api/repairs/execute", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail?.message || "自动修复失败");
+    nodes.repairStatus.textContent = `修复完成：已修复 ${data.fixed_count}，未修复 ${data.unresolved_count}，新增问题 ${data.introduced_count}。文件：${data.destination}`;
+    selectedIssueIds.clear();
+    nodes.repairSelected.hidden = true;
+  } catch (error) {
+    nodes.repairStatus.textContent = error.message;
+    nodes.confirmRepair.disabled = false;
+  } finally {
+    nodes.closeRepair.disabled = false;
+  }
+});
 
 async function showIssue(index) {
   if (index < 0 || index >= filteredIssues.length) return;

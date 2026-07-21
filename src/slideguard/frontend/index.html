@@ -72,6 +72,7 @@
         <button id="view-issues" type="button" hidden>查看问题</button>
         <button id="export-html" class="secondary" type="button" hidden>导出 HTML 报告</button>
         <button id="export-xlsx" class="secondary" type="button" hidden>导出 Excel 报告</button>
+        <button id="repair-selected" type="button" hidden>修复选中项</button>
         <p id="export-status" class="muted" hidden></p>
       </section>
 
@@ -129,6 +130,16 @@
           <button id="save-lexicon" type="submit">保存词库</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="repair-dialog" aria-labelledby="repair-dialog-title">
+      <div class="row between"><h2 id="repair-dialog-title">确认自动修复</h2><button id="close-repair" class="secondary" type="button">返回</button></div>
+      <p id="repair-summary"></p>
+      <p class="warning">原始文件始终保留，修复结果将保存为新文件。</p>
+      <p id="repair-path" class="muted"></p>
+      <div id="repair-operations" class="term-list"></div>
+      <div class="dialog-actions"><button id="confirm-repair" type="button">确认修复</button></div>
+      <p id="repair-status" class="muted"></p>
     </dialog>
 
     <script type="module" src="/assets/app.js"></script>

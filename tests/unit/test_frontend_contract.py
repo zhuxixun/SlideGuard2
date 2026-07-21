@@ -34,5 +34,10 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "导出 HTML 报告" in html
     assert "导出 Excel 报告" in html
     assert "/api/reports/export" in javascript
+    assert "修复选中项" in html
+    assert "原始文件始终保留" in html
+    assert "/api/repairs/prepare" in javascript
+    assert "/api/repairs/execute" in javascript
+    assert "repairAllowed" in javascript
     assert "http://" not in html + javascript
     assert "https://" not in html + javascript

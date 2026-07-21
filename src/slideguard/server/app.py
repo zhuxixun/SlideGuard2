@@ -29,6 +29,9 @@ from slideguard.preview.svg_builder import PreviewGuide, PreviewObject, build_sv
 import re
 from typing import Literal
 from slideguard.reporting.exporters import default_report_name, export_html, export_xlsx
+from slideguard.repair.manager import RepairManager
+from slideguard.repair.planner import FixPlanError
+from datetime import datetime
 
 
 class LexiconResponse(BaseModel):
@@ -52,6 +55,10 @@ class ReportExport(BaseModel):
     format: Literal["html", "xlsx"]
 
 
+class RepairPrepare(BaseModel):
+    issue_ids: list[str] = Field(default_factory=list)
+
+
 def create_app(
     *,
     token: str,
@@ -63,6 +70,7 @@ def create_app(
     native_dialog: NativeDialogService | None = None,
     session_store: SessionStore | None = None,
     scan_manager: ScanManager | None = None,
+    repair_manager: RepairManager | None = None,
 ) -> FastAPI:
     session_store = session_store or SessionStore()
     @asynccontextmanager
@@ -251,6 +259,93 @@ def create_app(
                         detail={"code": "report_export_failed", "message": str(exc)},
                     ) from exc
                 return {"cancelled": False, "path": str(selected.resolve())}
+
+            if repair_manager is not None:
+
+                @app.post("/api/repairs/prepare")
+                async def prepare_repair(request: RepairPrepare) -> dict[str, object]:
+                    state = scan_manager.snapshot()
+                    if state.result is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail={"code": "no_scan_result", "message": "当前没有可修复的扫描结果"},
+                        )
+                    default_name = (
+                        f"{state.result.snapshot.file_identity.path.stem}_SlideGuard_fixed_"
+                        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
+                    )
+                    selected = await native_dialog.save_report(default_name, ".pptx")
+                    if selected is None:
+                        return {"cancelled": True, "plan": None}
+                    if selected.suffix.lower() != ".pptx":
+                        selected = selected.with_suffix(".pptx")
+                    try:
+                        plan = repair_manager.prepare(
+                            state.result,
+                            tuple(request.issue_ids),
+                            selected,
+                        )
+                    except (FixPlanError, RuntimeError) as exc:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail={"code": "repair_plan_failed", "message": str(exc)},
+                        ) from exc
+                    return {
+                        "cancelled": False,
+                        "plan": {
+                            "destination": str(plan.destination),
+                            "issue_count": len(plan.issue_ids),
+                            "page_count": len({
+                                found.slide_index
+                                for found in state.result.issues
+                                if found.issue_id in plan.issue_ids
+                            }),
+                            "object_count": len({operation.object_key for operation in plan.operations}),
+                            "operations": [
+                                {
+                                    "object_key": operation.object_key,
+                                    "property_name": operation.property_name,
+                                    "original_value": operation.original_value,
+                                    "target_value": operation.target_value,
+                                }
+                                for operation in plan.operations
+                            ],
+                        },
+                    }
+
+                @app.post("/api/repairs/execute")
+                async def execute_repair() -> dict[str, object]:
+                    terms: tuple[str, ...] = ()
+                    if lexicon_store is not None:
+                        try:
+                            terms = lexicon_store.load().terms
+                        except LexiconError as exc:
+                            raise HTTPException(
+                                status_code=status.HTTP_409_CONFLICT,
+                                detail={"code": "lexicon_read_failed", "message": str(exc)},
+                            ) from exc
+                    try:
+                        repaired = await asyncio.to_thread(
+                            repair_manager.execute,
+                            sensitive_terms=terms,
+                        )
+                    except (FixPlanError, RuntimeError, OSError) as exc:
+                        raise HTTPException(
+                            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            detail={"code": "repair_failed", "message": str(exc)},
+                        ) from exc
+                    return {
+                        "destination": str(repaired.destination),
+                        "fixed_count": len(repaired.fixed_issue_ids),
+                        "unresolved_count": len(repaired.unresolved_issue_ids),
+                        "introduced_count": repaired.introduced_issue_count,
+                        "verification_complete": repaired.verification_scan.complete,
+                    }
+
+                @app.delete("/api/repairs/prepare", status_code=status.HTTP_204_NO_CONTENT)
+                def clear_repair_plan() -> Response:
+                    repair_manager.clear()
+                    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     if lifecycle is not None:
 

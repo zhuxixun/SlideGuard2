@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 from slideguard.server.app import create_app
 from slideguard.server.native_dialog import NativeDialogService
 from slideguard.application.session import SessionStore
+from slideguard.scan.manager import ScanManager
+from slideguard.repair.manager import RepairManager
+from slideguard.pptx.importer import inspect_pptx
 from pptx import Presentation
 
 
@@ -81,3 +84,56 @@ def test_dialog_api_imports_selected_file_and_cancel(tmp_path: Path) -> None:
     assert cancelled.json() == {"cancelled": True, "file": None}
     assert sessions.current().presentation.path == sample.resolve()
     assert backend.closed is True
+
+
+def test_repair_api_prepares_executes_and_preserves_source(tmp_path: Path) -> None:
+    source = tmp_path / "repair-source.pptx"
+    output = tmp_path / "repair-output.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    shape = slide.shapes.add_textbox(914400, 914400, 3657600, 914400)
+    run = shape.text_frame.paragraphs[0].add_run()
+    run.text = "Arial text"
+    run.font.name = "Arial"
+    presentation.save(source)
+    source_before = source.read_bytes()
+    sessions = SessionStore()
+    sessions.replace(inspect_pptx(source))
+    scans = ScanManager()
+    repairs = RepairManager()
+    backend = FakeDialogBackend([str(output)])
+    dialogs = NativeDialogService(lambda: backend)
+    headers = {"X-SlideGuard-Token": "secret"}
+    with TestClient(
+        create_app(
+            token="secret",
+            session_store=sessions,
+            scan_manager=scans,
+            repair_manager=repairs,
+            native_dialog=dialogs,
+        )
+    ) as client:
+        assert client.post("/api/scans", headers=headers, json={"mode": "standard"}).status_code == 202
+        import time
+        deadline = time.monotonic() + 5
+        state = {}
+        while time.monotonic() < deadline:
+            state = client.get("/api/scans/current", headers=headers).json()
+            if state["state"] != "running":
+                break
+            time.sleep(0.01)
+        font_issue = next(item for item in state["result"]["issues"] if item["rule_id"] == "R004")
+        prepared = client.post(
+            "/api/repairs/prepare",
+            headers=headers,
+            json={"issue_ids": [font_issue["issue_id"]]},
+        )
+        assert prepared.status_code == 200
+        assert prepared.json()["plan"]["issue_count"] == 1
+        executed = client.post("/api/repairs/execute", headers=headers)
+        assert executed.status_code == 200
+        assert executed.json()["fixed_count"] == 1
+    assert output.is_file()
+    assert source.read_bytes() == source_before
+    repaired = Presentation(output)
+    assert repaired.slides[0].shapes[0].text_frame.paragraphs[0].runs[0].font.name == "Microsoft YaHei"

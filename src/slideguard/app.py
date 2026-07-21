@@ -17,6 +17,7 @@ from slideguard.server.app import create_app
 from slideguard.server.lifecycle import LifecycleController
 from slideguard.server.native_dialog import NativeDialogService
 from slideguard.scan.manager import ScanManager
+from slideguard.repair.manager import RepairManager
 
 
 def run() -> None:
@@ -37,6 +38,7 @@ def run() -> None:
         native_dialog=native_dialog,
         session_store=SessionStore(),
         scan_manager=ScanManager(),
+        repair_manager=RepairManager(),
     )
     config = _server_config(app, port)
     server = uvicorn.Server(config)
