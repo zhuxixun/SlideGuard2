@@ -39,3 +39,16 @@ def test_svg_supports_reference_and_page_highlights() -> None:
     assert len([item for item in root.iter() if item.attrib.get("data-reference-for") == "reference"]) == 1
     assert len([item for item in root.iter() if item.attrib.get("data-page-highlight") == "true"]) == 1
     assert len([item for item in root.iter() if item.attrib.get("data-reference-line") == "y"]) == 1
+
+
+def test_svg_can_focus_highlighted_object_with_context() -> None:
+    svg = build_svg(
+        slide_width_pt=720,
+        slide_height_pt=540,
+        objects=(PreviewObject("small", 600, 450, 20, 10, "x"),),
+        highlighted_ids=frozenset({"small"}),
+        focus_highlights=True,
+    )
+    root = ET.fromstring(svg)
+    assert root.attrib["data-focused"] == "true"
+    assert root.attrib["viewBox"] != "0 0 720 540"

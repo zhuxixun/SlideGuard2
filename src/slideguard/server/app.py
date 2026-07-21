@@ -226,6 +226,7 @@ def create_app(
                 reference_ids=references,
                 page_highlight=page_highlight,
                 guides=guides,
+                focus_highlights=bool(found is not None and found.object_keys),
             )
             return Response(svg, media_type="image/svg+xml")
 

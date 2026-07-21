@@ -33,12 +33,19 @@ def build_svg(
     reference_ids: frozenset[str] = frozenset(),
     page_highlight: bool = False,
     guides: tuple[PreviewGuide, ...] = (),
+    focus_highlights: bool = False,
 ) -> str:
+    full_view_box = (0.0, 0.0, slide_width_pt, slide_height_pt)
+    view_box = (
+        _focused_view_box(objects, highlighted_ids | reference_ids, slide_width_pt, slide_height_pt)
+        if focus_highlights else full_view_box
+    )
     root = ET.Element(
         f"{{{SVG_NS}}}svg",
         {
-            "viewBox": f"0 0 {_number(slide_width_pt)} {_number(slide_height_pt)}",
+            "viewBox": " ".join(_number(value) for value in view_box),
             "role": "img",
+            "data-focused": "true" if view_box != full_view_box else "false",
         },
     )
     ET.SubElement(
@@ -133,3 +140,22 @@ def build_svg(
 
 def _number(value: float) -> str:
     return f"{value:.3f}".rstrip("0").rstrip(".")
+
+
+def _focused_view_box(
+    objects: tuple[PreviewObject, ...],
+    object_ids: frozenset[str],
+    slide_width: float,
+    slide_height: float,
+) -> tuple[float, float, float, float]:
+    targets = tuple(item for item in objects if item.object_id in object_ids)
+    if not targets:
+        return 0.0, 0.0, slide_width, slide_height
+    left = min(item.x for item in targets)
+    top = min(item.y for item in targets)
+    right = max(item.x + max(1.0, item.width) for item in targets)
+    bottom = max(item.y + max(1.0, item.height) for item in targets)
+    width = max(120.0, right - left)
+    height = max(90.0, bottom - top)
+    padding = max(12.0, max(width, height) * 0.15)
+    return left - padding, top - padding, width + padding * 2, height + padding * 2
