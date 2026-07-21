@@ -67,10 +67,12 @@ class TextFrameSnapshot:
 @dataclass(frozen=True, slots=True)
 class SlideObject:
     key: str
+    name: str
     object_type: str
     bounds_pt: Rect
     rotation: float
     visible: bool
+    has_visual_style: bool
     from_master: bool
     placeholder_type: str | None
     text_frame: TextFrameSnapshot | None
@@ -171,6 +173,7 @@ def _shape_snapshot(shape, part_uri: str, slide_index: int, unsupported: list[Un
         placeholder_type = str(shape.placeholder_format.type)
     return SlideObject(
         key=key,
+        name=shape.name,
         object_type=shape_type,
         bounds_pt=Rect(
             shape.left / EMU_PER_POINT,
@@ -180,9 +183,10 @@ def _shape_snapshot(shape, part_uri: str, slide_index: int, unsupported: list[Un
         ),
         rotation=float(shape.rotation or 0),
         visible=not _shape_hidden(shape),
+        has_visual_style=_has_visual_style(shape),
         from_master=False,
         placeholder_type=placeholder_type,
-        text_frame=_text_frame(shape) if getattr(shape, "has_text_frame", False) else None,
+        text_frame=_shape_text_frame(shape),
         children=children,
     )
 
@@ -202,6 +206,32 @@ def _text_frame(shape) -> TextFrameSnapshot:  # type: ignore[no-untyped-def]
         for paragraph in shape.text_frame.paragraphs
     )
     return TextFrameSnapshot(text=shape.text, paragraphs=paragraphs)
+
+
+def _shape_text_frame(shape) -> TextFrameSnapshot | None:  # type: ignore[no-untyped-def]
+    if getattr(shape, "has_text_frame", False):
+        return _text_frame(shape)
+    if not getattr(shape, "has_table", False):
+        return None
+    paragraphs: list[tuple[TextRunSnapshot, ...]] = []
+    texts: list[str] = []
+    for row in shape.table.rows:
+        for cell in row.cells:
+            texts.append(cell.text)
+            for paragraph in cell.text_frame.paragraphs:
+                paragraphs.append(
+                    tuple(
+                        TextRunSnapshot(
+                            text=run.text,
+                            font_name=run.font.name,
+                            font_size_pt=run.font.size.pt if run.font.size is not None else None,
+                            bold=run.font.bold,
+                            italic=run.font.italic,
+                        )
+                        for run in paragraph.runs
+                    )
+                )
+    return TextFrameSnapshot(text="\n".join(texts), paragraphs=tuple(paragraphs))
 
 
 def _text_occurrences(item) -> tuple[TextOccurrence, ...]:  # type: ignore[no-untyped-def]
@@ -227,6 +257,22 @@ def _text_occurrences(item) -> tuple[TextOccurrence, ...]:  # type: ignore[no-un
 def _shape_hidden(shape) -> bool:  # type: ignore[no-untyped-def]
     values = shape.element.xpath(".//*[local-name()='cNvPr']/@hidden")
     return bool(values and values[0] in {"1", "true"})
+
+
+def _has_visual_style(shape) -> bool:  # type: ignore[no-untyped-def]
+    if shape.shape_type in {
+        MSO_SHAPE_TYPE.PICTURE,
+        MSO_SHAPE_TYPE.CHART,
+        MSO_SHAPE_TYPE.TABLE,
+        MSO_SHAPE_TYPE.GROUP,
+        MSO_SHAPE_TYPE.MEDIA,
+        MSO_SHAPE_TYPE.EMBEDDED_OLE_OBJECT,
+        MSO_SHAPE_TYPE.LINKED_OLE_OBJECT,
+    }:
+        return True
+    if shape.shape_type in {MSO_SHAPE_TYPE.TEXT_BOX, MSO_SHAPE_TYPE.PLACEHOLDER}:
+        return bool(getattr(shape, "text", "").strip())
+    return True
 
 
 def _slide_hidden(slide_id) -> bool:  # type: ignore[no-untyped-def]
