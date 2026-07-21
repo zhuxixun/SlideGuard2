@@ -14,7 +14,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,8 @@ from slideguard.server.lifecycle import LifecycleController
 from slideguard.server.native_dialog import NativeDialogService
 from slideguard.scan.manager import ScanManager, ScanManagerSnapshot
 from slideguard.scan.models import ScanMode, ScanRequest
+from slideguard.preview.svg_builder import PreviewGuide, PreviewObject, build_svg
+import re
 
 
 class LexiconResponse(BaseModel):
@@ -141,6 +143,49 @@ def create_app(
         @app.post("/api/scans/current/cancel", status_code=status.HTTP_202_ACCEPTED)
         def cancel_scan() -> dict[str, object]:
             return {"accepted": scan_manager.cancel()}
+
+        @app.get("/api/scans/current/slides/{slide_index}/preview")
+        def slide_preview(slide_index: int, issue_id: str | None = None) -> Response:
+            state = scan_manager.snapshot()
+            if state.result is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "no_scan_result", "message": "当前没有可预览的扫描结果"},
+                )
+            snapshot = state.result.snapshot
+            if slide_index < 1 or slide_index > len(snapshot.slides):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"code": "slide_not_found", "message": "幻灯片页码不存在"},
+                )
+            slide = snapshot.slides[slide_index - 1]
+            found = next((item for item in state.result.issues if item.issue_id == issue_id), None)
+            highlighted: frozenset[str] = frozenset()
+            references: frozenset[str] = frozenset()
+            guides: tuple[PreviewGuide, ...] = ()
+            page_highlight = False
+            if found is not None and found.slide_index == slide_index:
+                if found.object_keys:
+                    highlighted = frozenset(found.object_keys[:1])
+                    if found.rule_id == "R007":
+                        references = frozenset(found.object_keys[1:])
+                        match = re.search(r"(left|right|hcenter|top|bottom|vcenter)=(-?\d+(?:\.\d+)?)pt", found.expected_value)
+                        if match:
+                            axis = "x" if match.group(1) in {"left", "right", "hcenter"} else "y"
+                            guides = (PreviewGuide(axis, float(match.group(2))),)
+                else:
+                    page_highlight = True
+            objects = tuple(_preview_objects(slide.objects))
+            svg = build_svg(
+                slide_width_pt=snapshot.slide_width_pt,
+                slide_height_pt=snapshot.slide_height_pt,
+                objects=objects,
+                highlighted_ids=highlighted,
+                reference_ids=references,
+                page_highlight=page_highlight,
+                guides=guides,
+            )
+            return Response(svg, media_type="image/svg+xml")
 
     if native_dialog is not None:
 
@@ -332,6 +377,13 @@ def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
                     "evidence": found.evidence,
                     "suggestion": found.suggestion,
                     "can_auto_fix": found.can_auto_fix,
+                    "status": found.status.value,
+                    "object_keys": found.object_keys,
+                    "standard_source": found.standard_source,
+                    "fix_proposal": (
+                        {"kind": found.fix_proposal.kind, "target_value": found.fix_proposal.target_value}
+                        if found.fix_proposal is not None else None
+                    ),
                 }
                 for found in result.issues
             ],
@@ -339,6 +391,19 @@ def _scan_snapshot_response(snapshot: ScanManagerSnapshot) -> dict[str, object]:
             "finished_at": result.finished_at.isoformat(),
         }
     return response
+
+
+def _preview_objects(objects):  # type: ignore[no-untyped-def]
+    for obj in objects:
+        yield PreviewObject(
+            object_id=obj.key,
+            x=obj.bounds_pt.left,
+            y=obj.bounds_pt.top,
+            width=obj.bounds_pt.width,
+            height=obj.bounds_pt.height,
+            text=obj.text_frame.text if obj.text_frame is not None else "",
+        )
+        yield from _preview_objects(obj.children)
 
 
 def _valid_websocket_request(

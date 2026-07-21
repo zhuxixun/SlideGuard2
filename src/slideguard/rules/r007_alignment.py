@@ -47,7 +47,16 @@ def check_alignment(snapshot: PresentationSnapshot) -> tuple[Issue, ...]:
                         fact_key=fact_key,
                         rule_id=RULE_ID,
                         slide_index=slide.slide_index,
-                        object_keys=(obj.key,),
+                        object_keys=(
+                            obj.key,
+                            *tuple(
+                                candidate.key
+                                for candidate in group
+                                if candidate.key != obj.key
+                                and abs(_feature_value(candidate, reference.feature) - reference.value)
+                                <= ALIGNMENT_TOLERANCE_PT
+                            ),
+                        ),
                         severity=Severity.S3,
                         actual_value=f"{reference.feature}={actual:.2f}pt，偏差 {delta:+.2f}pt",
                         expected_value=f"{reference.feature}={reference.value:.2f}pt",

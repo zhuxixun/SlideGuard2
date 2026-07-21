@@ -13,6 +13,23 @@ const nodes = {
   scanProgress: document.querySelector("#scan-progress"),
   scanResult: document.querySelector("#scan-result"),
   customRules: document.querySelector("#custom-rules"),
+  viewIssues: document.querySelector("#view-issues"),
+  issuesPanel: document.querySelector("#issues-panel"),
+  issuesCount: document.querySelector("#issues-count"),
+  issueList: document.querySelector("#issue-list"),
+  issueDetail: document.querySelector("#issue-detail"),
+  issuePreview: document.querySelector("#issue-preview"),
+  issueHeading: document.querySelector("#issue-heading"),
+  issueDescription: document.querySelector("#issue-description"),
+  issueTechnical: document.querySelector("#issue-technical"),
+  issueSearch: document.querySelector("#issue-search"),
+  severityFilter: document.querySelector("#severity-filter"),
+  ruleFilter: document.querySelector("#rule-filter"),
+  fixableFilter: document.querySelector("#fixable-filter"),
+  statusFilter: document.querySelector("#status-filter"),
+  previousIssue: document.querySelector("#previous-issue"),
+  nextIssue: document.querySelector("#next-issue"),
+  ignoreIssue: document.querySelector("#ignore-issue"),
   manage: document.querySelector("#manage-lexicon"),
   summary: document.querySelector("#lexicon-summary"),
   warning: document.querySelector("#lexicon-warning"),
@@ -33,6 +50,10 @@ let digest = "";
 let originalTerms = [];
 let workingTerms = [];
 let dirty = false;
+let scanIssues = [];
+let filteredIssues = [];
+let activeIssueIndex = -1;
+let previewUrl;
 
 function apiFetch(path, options = {}) {
   return fetch(path, {
@@ -231,11 +252,90 @@ function renderScanState(state) {
       nodes.scanProgress.textContent = state.result.complete ? "检查完成" : "扫描未完成";
       nodes.scanResult.textContent = `共发现 ${state.result.issues.length} 个问题：S1 ${counts.S1}，S2 ${counts.S2}，S3 ${counts.S3}，S4 ${counts.S4}`;
       nodes.scanResult.hidden = false;
+      scanIssues = state.result.issues.map((found) => ({ ...found, status: "pending" }));
+      nodes.viewIssues.hidden = !scanIssues.length;
+      prepareRuleFilter();
     } else {
       nodes.scanProgress.textContent = state.error || "扫描失败";
     }
   }
 }
+nodes.viewIssues.addEventListener("click", () => {
+  nodes.issuesPanel.hidden = false;
+  applyIssueFilters();
+  nodes.issuesPanel.scrollIntoView({ behavior: "smooth" });
+});
+[nodes.issueSearch, nodes.severityFilter, nodes.ruleFilter, nodes.fixableFilter, nodes.statusFilter]
+  .forEach((control) => control.addEventListener("input", applyIssueFilters));
+nodes.previousIssue.addEventListener("click", () => showIssue(Math.max(0, activeIssueIndex - 1)));
+nodes.nextIssue.addEventListener("click", () => showIssue(Math.min(filteredIssues.length - 1, activeIssueIndex + 1)));
+nodes.ignoreIssue.addEventListener("click", () => {
+  if (activeIssueIndex < 0) return;
+  const found = filteredIssues[activeIssueIndex];
+  found.status = found.status === "ignored" ? "pending" : "ignored";
+  nodes.ignoreIssue.textContent = found.status === "ignored" ? "取消忽略" : "忽略";
+  renderIssueList();
+});
+
+function prepareRuleFilter() {
+  nodes.ruleFilter.replaceChildren(new Option("全部类型", ""));
+  [...new Set(scanIssues.map((found) => found.rule_id))].forEach((rule) => {
+    nodes.ruleFilter.append(new Option(rule, rule));
+  });
+}
+
+function applyIssueFilters() {
+  const query = nodes.issueSearch.value.trim().toLowerCase();
+  filteredIssues = scanIssues.filter((found) => {
+    const searchable = `${found.rule_id} ${found.actual_value} ${found.evidence} ${found.suggestion}`.toLowerCase();
+    return (!query || searchable.includes(query))
+      && (!nodes.severityFilter.value || found.severity === nodes.severityFilter.value)
+      && (!nodes.ruleFilter.value || found.rule_id === nodes.ruleFilter.value)
+      && (!nodes.fixableFilter.value || found.can_auto_fix === (nodes.fixableFilter.value === "yes"))
+      && (!nodes.statusFilter.value || found.status === nodes.statusFilter.value);
+  });
+  activeIssueIndex = filteredIssues.length ? 0 : -1;
+  renderIssueList();
+  if (activeIssueIndex >= 0) showIssue(activeIssueIndex);
+  else nodes.issueDetail.hidden = true;
+}
+
+function renderIssueList() {
+  nodes.issueList.replaceChildren();
+  nodes.issuesCount.textContent = `${filteredIssues.length} 个问题`;
+  filteredIssues.forEach((found, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `issue-item${index === activeIssueIndex ? " active" : ""}`;
+    button.textContent = `${found.severity} · 第 ${found.slide_index} 页 · ${found.rule_id} · ${found.status === "ignored" ? "已忽略" : "待处理"}`;
+    button.addEventListener("click", () => showIssue(index));
+    nodes.issueList.append(button);
+  });
+}
+
+async function showIssue(index) {
+  if (index < 0 || index >= filteredIssues.length) return;
+  activeIssueIndex = index;
+  renderIssueList();
+  const found = filteredIssues[index];
+  nodes.issueDetail.hidden = false;
+  nodes.issueHeading.textContent = `${found.severity} · ${found.rule_id} · 第 ${found.slide_index} 页`;
+  nodes.issueDescription.innerHTML = "<dl><dt>实际值</dt><dd></dd><dt>标准值</dt><dd></dd><dt>判断依据</dt><dd></dd><dt>修改建议</dt><dd></dd><dt>可修复性</dt><dd></dd></dl>";
+  const values = nodes.issueDescription.querySelectorAll("dd");
+  [found.actual_value, found.expected_value, found.evidence, found.suggestion, found.can_auto_fix ? "可自动修复" : "需手动处理"]
+    .forEach((value, valueIndex) => { values[valueIndex].textContent = value; });
+  nodes.issueTechnical.textContent = `规则：${found.rule_id}\n对象：${found.object_keys.join(", ")}\n标准来源：${found.standard_source}`;
+  nodes.ignoreIssue.textContent = found.status === "ignored" ? "取消忽略" : "忽略";
+  nodes.previousIssue.disabled = index === 0;
+  nodes.nextIssue.disabled = index === filteredIssues.length - 1;
+  const response = await apiFetch(`/api/scans/current/slides/${found.slide_index}/preview?issue_id=${encodeURIComponent(found.issue_id)}`);
+  if (response.ok) {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(await response.blob());
+    nodes.issuePreview.src = previewUrl;
+  }
+}
+
 nodes.close.addEventListener("click", closeDialog);
 nodes.search.addEventListener("input", renderTerms);
 nodes.addTerm.addEventListener("click", () => {

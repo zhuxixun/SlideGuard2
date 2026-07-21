@@ -1,6 +1,6 @@
 from xml.etree import ElementTree as ET
 
-from slideguard.preview.svg_builder import PreviewObject, build_svg
+from slideguard.preview.svg_builder import PreviewGuide, PreviewObject, build_svg
 
 
 def test_svg_uses_slide_coordinates_escapes_text_and_separates_overlay() -> None:
@@ -24,3 +24,18 @@ def test_svg_uses_slide_coordinates_escapes_text_and_separates_overlay() -> None
     ]
     assert len(overlays) == 1
 
+
+def test_svg_supports_reference_and_page_highlights() -> None:
+    svg = build_svg(
+        slide_width_pt=100,
+        slide_height_pt=50,
+        objects=(PreviewObject("target", 1, 2, 10, 10), PreviewObject("reference", 20, 2, 10, 10)),
+        highlighted_ids=frozenset({"target"}),
+        reference_ids=frozenset({"reference"}),
+        page_highlight=True,
+        guides=(PreviewGuide("y", 12),),
+    )
+    root = ET.fromstring(svg)
+    assert len([item for item in root.iter() if item.attrib.get("data-reference-for") == "reference"]) == 1
+    assert len([item for item in root.iter() if item.attrib.get("data-page-highlight") == "true"]) == 1
+    assert len([item for item in root.iter() if item.attrib.get("data-reference-line") == "y"]) == 1

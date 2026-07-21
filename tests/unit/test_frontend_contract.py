@@ -24,5 +24,12 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert "/api/scans" in javascript
     assert "/api/scans/current/cancel" in javascript
     assert "renderScanState" in javascript
+    assert "问题列表" in html
+    assert "issue-search" in html
+    assert "severity-filter" in html
+    assert "fixable-filter" in html
+    assert "status-filter" in html
+    assert "showIssue" in javascript
+    assert "/preview?issue_id=" in javascript
     assert "http://" not in html + javascript
     assert "https://" not in html + javascript

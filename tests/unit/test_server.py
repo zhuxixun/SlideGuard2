@@ -176,6 +176,14 @@ def test_scan_api_requires_presentation_and_returns_completed_result(tmp_path: P
         ("R002", "R003", "R004", "R006", "R009", "R010")
     )
     assert payload["result"]["rule_set_version"] == "builtin-rules-v1.0"
+    issue_id = payload["result"]["issues"][0]["issue_id"]
+    preview = client.get(
+        f"/api/scans/current/slides/1/preview?issue_id={issue_id}",
+        headers=TOKEN_HEADERS,
+    )
+    assert preview.status_code == 200
+    assert preview.headers["content-type"].startswith("image/svg+xml")
+    assert 'data-page-highlight="true"' in preview.text
 
 
 def test_scan_api_rejects_empty_custom_selection(tmp_path: Path) -> None:

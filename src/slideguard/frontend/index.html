@@ -69,6 +69,27 @@
           <span id="scan-progress" class="muted">请先打开 PPT 文件</span>
         </div>
         <div id="scan-result" hidden></div>
+        <button id="view-issues" type="button" hidden>查看问题</button>
+      </section>
+
+      <section id="issues-panel" class="card" aria-labelledby="issues-title" hidden>
+        <div class="row between"><h2 id="issues-title">问题列表</h2><span id="issues-count" class="muted"></span></div>
+        <div class="issue-filters">
+          <input id="issue-search" type="search" placeholder="搜索问题描述">
+          <select id="severity-filter"><option value="">全部级别</option><option>S1</option><option>S2</option><option>S3</option><option>S4</option></select>
+          <select id="rule-filter"><option value="">全部类型</option></select>
+          <select id="fixable-filter"><option value="">全部</option><option value="yes">可自动修复</option><option value="no">需手动处理</option></select>
+          <select id="status-filter"><option value="">全部状态</option><option value="pending">待处理</option><option value="ignored">已忽略</option></select>
+        </div>
+        <div class="issue-layout">
+          <div id="issue-list" class="issue-list"></div>
+          <article id="issue-detail" class="issue-detail" hidden>
+            <img id="issue-preview" alt="问题所在幻灯片预览">
+            <h3 id="issue-heading"></h3><div id="issue-description"></div>
+            <details><summary>技术信息</summary><pre id="issue-technical"></pre></details>
+            <div class="row"><button id="previous-issue" class="secondary" type="button">上一个</button><button id="next-issue" class="secondary" type="button">下一个</button><button id="ignore-issue" class="secondary" type="button">忽略</button></div>
+          </article>
+        </div>
       </section>
     </main>
 
