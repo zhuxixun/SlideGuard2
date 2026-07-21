@@ -59,6 +59,7 @@ class TextRunSnapshot:
     font_size_pt: float | None
     bold: bool | None
     italic: bool | None
+    color_rgb: str | None
     paragraph_level: int
     start: int
     end: int
@@ -136,6 +137,7 @@ class SlideSnapshot:
     slide_index: int
     slide_part: str
     layout_part: str | None
+    layout_title_left_pt: float | None
     hidden: bool
     objects: tuple[SlideObject, ...]
     parse_status: ParseStatus
@@ -185,6 +187,7 @@ def build_snapshot(imported: ImportedPresentation) -> PresentationSnapshot:
                 slide_index=index,
                 slide_part=part_uri,
                 layout_part=str(slide.slide_layout.part.partname).lstrip("/"),
+                layout_title_left_pt=_layout_title_left(slide, document.slide_width),
                 hidden=_slide_hidden(slide_ids[index - 1]),
                 objects=objects,
                 parse_status=ParseStatus.COMPLETE,
@@ -254,14 +257,18 @@ def _text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot:  # type: i
             direct_or_inherited = run.font.name or paragraph.font.name or _placeholder_font(shape, paragraph_index)
             latin, east_asia = _effective_fonts(shape, direct_or_inherited, theme_fonts)
             font_size = run.font.size or paragraph.font.size or _placeholder_font_size(shape, paragraph_index)
+            bold = run.font.bold if run.font.bold is not None else paragraph.font.bold
+            if bold is None:
+                bold = _placeholder_bold(shape, paragraph_index)
             runs.append(
             TextRunSnapshot(
                 text=run.text,
                 font_name=latin,
                 east_asia_font_name=east_asia,
                 font_size_pt=font_size.pt if font_size is not None else None,
-                bold=run.font.bold,
+                bold=bold,
                 italic=run.font.italic,
+                color_rgb=_font_color(run.font) or _font_color(paragraph.font) or _placeholder_color(shape, paragraph_index),
                 paragraph_level=paragraph.level,
                 start=offset,
                 end=offset + len(run.text),
@@ -309,6 +316,7 @@ def _shape_text_frame(shape, theme_fonts: ThemeFonts) -> TextFrameSnapshot | Non
                             font_size_pt=run.font.size.pt if run.font.size is not None else None,
                             bold=run.font.bold,
                             italic=run.font.italic,
+                            color_rgb=_font_color(run.font) or _font_color(paragraph.font),
                             paragraph_level=paragraph.level,
                             start=offset,
                             end=offset + len(run.text),
@@ -401,6 +409,7 @@ def _cell_text_frame(cell, theme_fonts: ThemeFonts) -> TextFrameSnapshot:  # typ
                     font_size_pt=(run.font.size or paragraph.font.size).pt if (run.font.size or paragraph.font.size) is not None else None,
                     bold=run.font.bold,
                     italic=run.font.italic,
+                    color_rgb=_font_color(run.font) or _font_color(paragraph.font),
                     paragraph_level=paragraph.level,
                     start=offset,
                     end=offset + len(run.text),
@@ -457,6 +466,46 @@ def _placeholder_font_size(shape, paragraph_index: int):  # type: ignore[no-unty
         paragraph = paragraphs[min(paragraph_index, len(paragraphs) - 1)]
         if paragraph.font.size is not None:
             return paragraph.font.size
+    return None
+
+
+def _placeholder_bold(shape, paragraph_index: int) -> bool | None:  # type: ignore[no-untyped-def]
+    return _placeholder_property(shape, paragraph_index, lambda paragraph: paragraph.font.bold)
+
+
+def _placeholder_color(shape, paragraph_index: int) -> str | None:  # type: ignore[no-untyped-def]
+    return _placeholder_property(shape, paragraph_index, lambda paragraph: _font_color(paragraph.font))
+
+
+def _placeholder_property(shape, paragraph_index: int, getter):  # type: ignore[no-untyped-def]
+    current = shape
+    while getattr(current, "is_placeholder", False):
+        current = getattr(current, "_base_placeholder", None)
+        if current is None or not getattr(current, "has_text_frame", False):
+            break
+        paragraphs = current.text_frame.paragraphs
+        value = getter(paragraphs[min(paragraph_index, len(paragraphs) - 1)])
+        if value is not None:
+            return value
+    return None
+
+
+def _font_color(font) -> str | None:  # type: ignore[no-untyped-def]
+    try:
+        rgb = font.color.rgb
+    except AttributeError:
+        return None
+    return str(rgb).upper() if rgb is not None else None
+
+
+def _layout_title_left(slide, slide_width) -> float | None:  # type: ignore[no-untyped-def]
+    for placeholder in slide.slide_layout.placeholders:
+        placeholder_type = str(placeholder.placeholder_format.type)
+        if not placeholder_type.startswith(("TITLE", "CENTER_TITLE")):
+            continue
+        left = placeholder.left / EMU_PER_POINT
+        if 0 <= left < slide_width / EMU_PER_POINT:
+            return left
     return None
 
 
