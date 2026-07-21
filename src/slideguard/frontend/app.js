@@ -96,9 +96,12 @@ function normalizeTerms(terms) {
 
 function updateDirtyState() {
   dirty = JSON.stringify(workingTerms) !== JSON.stringify(originalTerms);
-  const added = workingTerms.filter((term) => !originalTerms.includes(term)).length;
-  const removed = originalTerms.filter((term) => !workingTerms.includes(term)).length;
-  nodes.editSummary.textContent = dirty ? `新增 ${added} 条，删除或修改 ${removed} 条` : "没有未保存修改";
+  const addedCandidates = workingTerms.filter((term) => !originalTerms.includes(term)).length;
+  const removedCandidates = originalTerms.filter((term) => !workingTerms.includes(term)).length;
+  const modified = Math.min(addedCandidates, removedCandidates);
+  const added = addedCandidates - modified;
+  const removed = removedCandidates - modified;
+  nodes.editSummary.textContent = dirty ? `新增 ${added} 条，修改 ${modified} 条，删除 ${removed} 条` : "没有未保存修改";
 }
 
 function renderTerms() {
@@ -172,7 +175,14 @@ if (!token) {
     .then(async () => {
       nodes.openPptx.disabled = false;
       nodes.status.textContent = "本地服务连接成功。";
-      await loadLexicon();
+      try {
+        await loadLexicon();
+      } catch (error) {
+        nodes.summary.textContent = `词库读取失败：${error.message}`;
+        nodes.warning.textContent = "敏感词库无法读取，R010 将标记为执行失败；其他规则仍可正常检查。";
+        nodes.warning.hidden = false;
+        nodes.manage.disabled = true;
+      }
       const socketProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       websocket = new WebSocket(`${socketProtocol}//${window.location.host}/ws`, ["slideguard", token]);
       websocket.addEventListener("open", () => websocket.send("ping"));
@@ -663,23 +673,27 @@ nodes.form.addEventListener("submit", async (event) => {
   updateDirtyState();
   if (!dirty) { nodes.dialog.close(); return; }
   if (!window.confirm(`${nodes.editSummary.textContent}，确定保存吗？`)) return;
-  const response = await apiFetch("/api/lexicon", {
-    method: "PUT",
-    body: JSON.stringify({ terms: workingTerms, expected_digest: digest }),
-  });
-  if (response.status === 409) {
-    window.alert("词库已被其他窗口修改，请刷新后重试。");
-    await loadLexicon();
-    return;
+  nodes.form.querySelector("#save-lexicon").disabled = true;
+  try {
+    const response = await apiFetch("/api/lexicon", {
+      method: "PUT",
+      body: JSON.stringify({ terms: workingTerms, expected_digest: digest }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      window.alert(`${data.detail?.message || "词库保存失败"}。原词库未改变。`);
+      if (response.status === 409) await loadLexicon();
+      return;
+    }
+    digest = data.digest;
+    originalTerms = [...data.terms];
+    workingTerms = [...data.terms];
+    nodes.summary.textContent = `当前共有 ${data.count} 个有效词条。`;
+    nodes.warning.hidden = !data.empty;
+    nodes.dialog.close();
+  } finally {
+    nodes.form.querySelector("#save-lexicon").disabled = false;
   }
-  if (!response.ok) { window.alert("词库保存失败，原词库未改变。"); return; }
-  const data = await response.json();
-  digest = data.digest;
-  originalTerms = [...data.terms];
-  workingTerms = [...data.terms];
-  nodes.summary.textContent = `当前共有 ${data.count} 个有效词条。`;
-  nodes.warning.hidden = !data.empty;
-  nodes.dialog.close();
 });
 nodes.exit.addEventListener("click", () => {
   nodes.exit.disabled = true;

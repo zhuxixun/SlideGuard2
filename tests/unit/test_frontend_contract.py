@@ -14,6 +14,9 @@ def test_frontend_implements_in_app_lexicon_management_without_remote_assets() -
     assert 'method: "PUT"' in javascript
     assert "expected_digest" in javascript
     assert "window.confirm" in javascript
+    assert "修改 ${modified} 条" in javascript
+    assert "R010 将标记为执行失败；其他规则仍可正常检查" in javascript
+    assert "原词库未改变" in javascript
     assert "打开 PPT 文件" in html
     assert "将 .pptx 文件拖到此处" in html
     assert "pptx-drop-zone" in html
